@@ -3,7 +3,8 @@ import ctoken
 import re
 import sys
 
-patterns = [(r'^int*', ctoken.CTokenType.KEY_INT),
+patterns = [(r'^return', ctoken.CTokenType.KEY_RETURN),
+            (r'^int*', ctoken.CTokenType.KEY_INT),
             (r'^[a-zA-Z_]+[0-9]*', ctoken.CTokenType.IDENTIFIER),
             (r'^[0-9]+', ctoken.CTokenType.NUMBER),
             (r'^==', ctoken.CTokenType.OP_EQ),

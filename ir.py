@@ -46,6 +46,19 @@ class RET(Instruction):
     def __init__(self):
         super().__init__()
 
+# 无条件跳转
+class J(Instruction):
+    def __init__(self, dest: str):
+        super().__init__()
+        self.dest = dest
+
+# 移动寄存器的值
+class MV(Instruction):
+    def __init__(self, dest: Register, src: Register):
+        super().__init__()
+        self.dest = dest
+        self.src = src
+
 # 指令+
 class ADD(Instruction):
     def __init__(self, dest: Register, src1: Register, src2: Register):

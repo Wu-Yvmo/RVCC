@@ -2,6 +2,7 @@ import ctokenize
 from typing import * # type: ignore
 import ctoken
 import cast
+import varinfo
 
 # parse上下文管理器
 class ParseContext:
@@ -124,6 +125,8 @@ def parse_stmt(ctx: ParseContext) -> cast.Stmt:
         return parse_stmt_blk(ctx)
     elif ctx.current().token_type == ctoken.CTokenType.KEY_INT:
         return parse_stmt_vardefs(ctx)
+    elif ctx.current().token_type == ctoken.CTokenType.KEY_RETURN:
+        return parse_stmt_ret(ctx)
     return parse_stmt_exp(ctx)
 
 def parse_stmt_exp(ctx: ParseContext) -> cast.Stmt:
@@ -138,7 +141,14 @@ def parse_stmt_blk(ctx: ParseContext) -> cast.Stmt:
         stmts.append(parse_stmt(ctx))
     ctx.iter()
     ltrim(ctx)
-    return cast.BlkStmt(stmts)
+    blkstmt = cast.BlkStmt(stmts)
+    # 扫描变量并添加到 整体Var中
+    for stmt in blkstmt.stmts:
+        if isinstance(stmt, cast.VarDefsStmt):
+            for vardef in stmt.var_defs:
+                vi = varinfo.VarInfo(vardef.name.value)
+                blkstmt.varinfos.append(vi)
+    return blkstmt
 
 # 我们应当在parse的时候完成变量编址吗？
 def parse_stmt_vardefs(ctx: ParseContext) -> cast.Stmt:
@@ -160,7 +170,16 @@ def parse_vardef(ctx: ParseContext) -> cast.VarDef:
         return cast.VarDef(name, exp)
     return cast.VarDef(name, None)
 
+def parse_stmt_ret(ctx: ParseContext) -> cast.Stmt:
+    ctx.iter()
+    if ctx.current().token_type == ctoken.CTokenType.PC_SEMICOLON:
+        ltrim(ctx)
+        return cast.RetStmt(None)
+    value = parse_exp(ctx)
+    ltrim(ctx)
+    return cast.RetStmt(value)
+
 if __name__ == '__main__':
-    tokens = ctokenize.tokenize('1+1')
+    tokens = ctokenize.tokenize('')
     ast = parse(tokens)
     print('Hello, world')

@@ -1,6 +1,7 @@
 from typing import * # type: ignore
 from enum import Enum, auto
 
+import varinfo
 import ctoken
 
 class Exp:
@@ -70,9 +71,11 @@ class BlkStmt(Stmt):
     def __init__(self, stmts: list[Stmt]):
         super().__init__()
         self.stmts = stmts
+        self.varinfos: list[varinfo.VarInfo] = []
 
-class VarDef(Stmt):
+class VarDef:
     def __init__(self, name: ctoken.CToken, init: Exp|None):
+        super().__init__()
         self.name = name
         self.init = init
 
@@ -80,3 +83,11 @@ class VarDefsStmt(Stmt):
     def __init__(self, var_defs: list[VarDef]):
         super().__init__()
         self.var_defs = var_defs
+
+class RetStmt(Stmt):
+    def __init__(self, value: Exp|None):
+        super().__init__()
+        self.value = value
+
+class Prog:
+    pass
