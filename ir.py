@@ -52,6 +52,13 @@ class J(Instruction):
         super().__init__()
         self.dest = dest
 
+# 有条件跳转 等于零则跳转
+class BEQZ(Instruction):
+    def __init__(self, src: Register, dest: str):
+        super().__init__()
+        self.src = src
+        self.dest = dest
+
 # 移动寄存器的值
 class MV(Instruction):
     def __init__(self, dest: Register, src: Register):

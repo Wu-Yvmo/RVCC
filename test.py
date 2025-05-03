@@ -1,6 +1,7 @@
 from typing import * # type: ignore
 import os
 import tqdm
+
 test_items = [
     (r'{return 0;}', 0),
     (r'{return 42;}', 42),
@@ -41,7 +42,40 @@ test_items = [
     (r'{int a=3;int b=4;a=1; return a+b;}', 5),
     (r'{int foo=3; return foo;}', 3),
     (r'{int foo2=70; int bar4=4; return foo2+bar4;}', 74),
+    (r'{ return 1; 2; 3; }', 1),
+    (r'{ 1; return 2; 3; }', 2),
+    (r'{ 1; 2; return 3; }', 3),
+    (r'{ {1; {2;} return 3;} }', 3),
+    (r'{ ;;; return 5; }', 5),
+    (r'{ if (0) return 2; return 3; }', 3),
+    (r'{ if (1-1) return 2; return 3; }', 3),
+    (r'{ if (1) return 2; return 3; }', 2),
+    (r'{ if (2-1) return 2; return 3; }', 2),
+    (r'{ if (0) { 1; 2; return 3; } else { return 4; } }', 4),
+    (r'{ if (1) { 1; 2; return 3; } else { return 4; } }', 3),
+    (r'{ int i=0; int j=0; for (i=0; i<=10; i=i+1) j=i+j; return j;}', 55),
+    (r'{ for (;;) {return 3;} return 5; }', 3),
+    (r'{ int i=0; while(i<10) { i=i+1; } return i;}', 10),
+    # (r'{}', -1),
 ]
+
+test_items = test_items[::-1]
+
+# [16] 支持for语句
+# assert 55 '{ i=0; j=0; for (i=0; i<=10; i=i+1) j=i+j; return j; }'
+# assert 3 '{ for (;;) {return 3;} return 5; }'
+
+# [17] 支持while语句
+# assert 10 '{ i=0; while(i<10) { i=i+1; } return i; }'
+
+# [15] 支持if语句
+# assert 3 '{ if (0) return 2; return 3; }'
+# assert 3 '{ if (1-1) return 2; return 3; }'
+# assert 2 '{ if (1) return 2; return 3; }'
+# assert 2 '{ if (2-1) return 2; return 3; }'
+# assert 4 '{ if (0) { 1; 2; return 3; } else { return 4; } }'
+# assert 3 '{ if (1) { 1; 2; return 3; } else { return 4; } }'
+# （没实现）
 
 # [10] 支持单字母变量
 # assert 3 'a=3; a;'
@@ -103,6 +137,17 @@ test_items = [
 # assert 1 '5==2+3'
 # assert 0 '6==4+3'
 # assert 1 '0*9+5*2==4+4*(6/3)-2'
+
+# [12] 支持return
+# assert 1 '{ return 1; 2; 3; }'
+# assert 2 '{ 1; return 2; 3; }'
+# assert 3 '{ 1; 2; return 3; }'
+
+# [13] 支持{...}
+# assert 3 '{ {1; {2;} return 3;} }'
+
+# [14] 支持空语句
+# assert 5 '{ ;;; return 5; }'
 
 def assert_zero(to_assert: int):
     if to_assert != 0:

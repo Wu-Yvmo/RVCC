@@ -89,5 +89,26 @@ class RetStmt(Stmt):
         super().__init__()
         self.value = value
 
+class IfStmt(Stmt):
+    def __init__(self, cond: Exp, t: Stmt, f: Stmt|None):
+        super().__init__()
+        self.cond = cond
+        self.t = t
+        self.f = f
+
+class ForStmt(Stmt):
+    def __init__(self, init: None|VarDefsStmt|Exp, cond: None|Exp, step: None|Exp, body: Stmt):
+        super().__init__()
+        self.init = init
+        self.cond = cond
+        self.step = step
+        self.body = body
+
+class WhileStmt(Stmt):
+    def __init__(self, cond: Exp, body: Stmt):
+        super().__init__()
+        self.cond = cond
+        self.body = body
+
 class Prog:
     pass
