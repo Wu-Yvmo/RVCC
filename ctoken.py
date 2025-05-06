@@ -21,6 +21,7 @@ class CTokenType(Enum):
     OP_SUB = auto()
     OP_MUL = auto()
     OP_DIV = auto()
+    OP_BITS_AND = auto()
     # 括号
     PC_L_ROUND_BRACKET = auto()
     PC_R_ROUND_BRACKET = auto()

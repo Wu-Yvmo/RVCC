@@ -2,6 +2,8 @@ import c_ast
 from ir import *
 from typing import * # type: ignore
 
+import varinfo # type: ignore
+
 # 我们讨论一下怎么生成return语句
 # 现在这个逻辑应该是不正确的
 # 要一鼓作气直接高层次IR化
@@ -68,24 +70,38 @@ class CodegenContext:
         # 栈帧长度计数 按字节为单位
         self.frame_length: int = 0
         # 已经生效了的帧
-        self.frame_tracker: list[c_ast.BlkStmt] = []
+        self.frame_tracker: list[list[varinfo.VarInfo]] = []
         # if标号的计数器
         self.if_counter = 0
         # for标号的计数器
         self.for_counter = 0
         # while标号的计数器
         self.while_counter = 0
+        self.func_name = ''
     
-    def init_frame_length(self, stmt: c_ast.Stmt):
+    def init_frame_length(self, vardefs: c_ast.VarDefsStmt):
+        # 现在是对整个函数进行初始化
+        # 要对传入的参数也进行编址
+        if not isinstance(vardefs.var_describes[0], c_ast.FuncVarDescribe):
+            raise Exception('')
+        frame_0: list[varinfo.VarInfo] = []
+        for param in vardefs.var_describes[0].params:
+            vi = varinfo.VarInfo(param.var_describes[0].get_name())
+            # pt = param.var_describes[0].get_type()
+            self.frame_length += 8
+            vi.offset = self.frame_length
+            frame_0.append(vi)
+        self.frame_tracker.append(frame_0)
         # 1.对所有变量进行编址
-        if isinstance(stmt, c_ast.BlkStmt):
-            return self.__init_frame_length_blkstmt(stmt)
+        if isinstance(vardefs.var_describes[0].body, c_ast.BlkStmt):
+            return self.__init_frame_length_blkstmt(vardefs.var_describes[0].body)
         # 2.对齐栈长度为16字节
         # （暂时未实现）
         raise Exception('')
 
     def __init_frame_length_blkstmt(self, blkstmt: c_ast.BlkStmt):
-        for varinfo in blkstmt.varinfos:
+        # 按照测试用例的要求，变量在栈上的存储方式是类似数组的
+        for varinfo in blkstmt.varinfos[::-1]:
             self.frame_length += 8
             varinfo.offset = self.frame_length
         # 累加所有子blk
@@ -105,14 +121,14 @@ class CodegenContext:
                     self.__init_frame_length_blkstmt(stmt.body)
     
     def enter_scope(self, blkstmt: c_ast.BlkStmt):
-        self.frame_tracker.append(blkstmt)
+        self.frame_tracker.append(blkstmt.varinfos)
 
     def exit_scope(self):
         self.frame_tracker.pop()
 
     def query_var(self, name: str) -> int:
         for frame in self.frame_tracker[::-1]:
-            for vi in frame.varinfos:
+            for vi in frame:
                 if vi.name == name:
                     return vi.offset
         raise Exception('')
@@ -180,18 +196,64 @@ class CodegenContext:
         self.while_counter += 1
         return (f'.L.while.{while_ctr}.cond', f'.L.while.{while_ctr}.end')
 
-def codegen_ast2ir_prog(ctx: CodegenContext, prog: c_ast.Stmt) -> list[IR]:
-    ctx.init_frame_length(prog)
+def codegen_ast2ir_global_vardefs(ctx: CodegenContext, vardefs: c_ast.VarDefsStmt) -> list[IR]:
     irs: list[IR] = []
-    # fp寄存器压栈
-    irs.extend(codegen_ast2ir_reg_save(Register(RegNo.FP)))
-    # sp复制到fp中
-    irs.append(MV(Register(RegNo.FP), Register(RegNo.SP)))
-    # sp按照当前的栈帧大小对齐后增长
-    irs.append(ADDI(Register(RegNo.SP), Register(RegNo.SP), str(-ctx.frame_length)))
-    irs.extend(codegen_ast2ir_stmt(ctx, prog))
-    irs.extend(codegen_ast2ir_retcontent(ctx))
-    return irs
+    if vardefs.is_funcdef():
+        ctx.func_name = vardefs.var_describes[0].get_name()
+        # 1.生成全局声明和函数开头
+        irs.extend([
+            PreOrder('globl', vardefs.var_describes[0].get_name()),
+            Label(vardefs.var_describes[0].get_name()),
+        ])
+        # 2.生成函数入口的保存操作
+        #   ra寄存器压栈
+        irs.extend(codegen_ast2ir_reg_save(Register(RegNo.RA)))
+        #   fp寄存器压栈
+        irs.extend(codegen_ast2ir_reg_save(Register(RegNo.FP)))
+        #   sp复制到fp中
+        irs.append(MV(Register(RegNo.FP), Register(RegNo.SP)))
+        # 初始化栈帧
+        if not isinstance(vardefs.var_describes[0], c_ast.FuncVarDescribe):
+            raise Exception('')
+        if vardefs.var_describes[0].body is None:
+            raise Exception('')
+        ctx.init_frame_length(vardefs)
+        # sp按照当前的栈帧大小对齐后增长
+        irs.append(ADDI(Register(RegNo.SP), Register(RegNo.SP), str(-ctx.frame_length)))
+        # 把寄存器中的内容复制到栈帧中
+        # 具体的执行办法是：a0到a6全部压栈
+        # 然后依次出栈到a0
+        for i in range(len(vardefs.var_describes[0].params)):
+            reg = list(RegNo)[i]
+            irs.extend(codegen_ast2ir_reg_save(Register(reg)))
+        for i in range(len(vardefs.var_describes[0].params))[::-1]:
+            # 生成变量地址
+            irs.extend(codegen_address(ctx, vardefs.var_describes[0].params[i].var_describes[0].get_name()))
+            # 将变量地址移动到a1
+            irs.append(MV(Register(RegNo.A1), Register(RegNo.A0)))
+            irs.extend(codegen_ast2ir_reg_load(Register(RegNo.A0)))
+            # 将变量的值存储到0(a1)中
+            irs.append(SD(Register(RegNo.A0), '0', Register(RegNo.A1)))
+        # 3.生成函数体
+        irs.extend(codegen_ast2ir_stmt(ctx, vardefs.var_describes[0].body))
+        # 4.生成ret逻辑
+        irs.extend(codegen_ast2ir_retcontent(ctx))
+        return irs
+    # 说明是全局变量 暂时没有提供支持
+    raise Exception('')
+
+# def codegen_ast2ir_prog(ctx: CodegenContext, prog: c_ast.Stmt) -> list[IR]:
+#     ctx.init_frame_length(prog)
+#     irs: list[IR] = []
+#     # fp寄存器压栈
+#     irs.extend(codegen_ast2ir_reg_save(Register(RegNo.FP)))
+#     # sp复制到fp中
+#     irs.append(MV(Register(RegNo.FP), Register(RegNo.SP)))
+#     # sp按照当前的栈帧大小对齐后增长
+#     irs.append(ADDI(Register(RegNo.SP), Register(RegNo.SP), str(-ctx.frame_length)))
+#     irs.extend(codegen_ast2ir_stmt(ctx, prog))
+#     irs.extend(codegen_ast2ir_retcontent(ctx))
+#     return irs
 
 def codegen_ast2ir_stmt(ctx: CodegenContext, stmt: c_ast.Stmt) -> list[IR]:
     if isinstance(stmt, c_ast.ExpStmt):
@@ -223,23 +285,28 @@ def codegen_ast2ir_blkstmt(ctx: CodegenContext, blkstmt: c_ast.BlkStmt) -> list[
 
 def codegen_ast2ir_vardefsstmt(ctx: CodegenContext, vardefs: c_ast.VarDefsStmt) -> list[IR]:
     irs: list[IR] = []
-    for vardef in vardefs.var_defs:
+    for vardef in vardefs.var_describes:
         irs.extend(codegen_ast2ir_vardef(ctx, vardef))
     return irs
 
-def codegen_ast2ir_vardef(ctx: CodegenContext, vardef: c_ast.VarDef) -> list[IR]:
-    if vardef.init:
-        irs: list[IR] = codegen_ast2ir_exp(ctx, vardef.init)
-        irs.append(SD(Register(RegNo.A0), str(-ctx.query_var(vardef.name.value)), Register(RegNo.FP)))
-        return irs
-    return []
+def codegen_ast2ir_vardef(ctx: CodegenContext, vardescribe: c_ast.VarDescribe) -> list[IR]:
+    #vardescribe 是 NormalVarDescribe
+    if isinstance(vardescribe, c_ast.NormalVarDescribe):
+        if vardescribe.init is not None:
+            irs: list[IR] = codegen_ast2ir_exp(ctx, vardescribe.init)
+            irs.append(SD(Register(RegNo.A0), str(-ctx.query_var(vardescribe.name.value)), Register(RegNo.FP)))
+            return irs
+        return []
+    if isinstance(vardescribe, c_ast.FuncVarDescribe):
+        pass
+    raise Exception('')
 
 # 现在有个问题 return 的 正文不需要跳转
 def codegen_ast2ir_retstmt(ctx: CodegenContext, ret: c_ast.RetStmt) -> list[IR]:
     irs: list[IR] = []
     if ret.value:
         irs.extend(codegen_ast2ir_exp(ctx, ret.value))
-    irs.append(J('.L.return'))
+    irs.append(J(f'.L.{ctx.func_name}.return'))
     return irs
 
 def codegen_ast2ir_ifstmt(ctx: CodegenContext, ifstmt: c_ast.IfStmt) -> list[IR]:
@@ -330,12 +397,19 @@ def codegen_ast2ir_reg_load(reg: Register) -> list[IR]:
 def codegen_address(ctx: CodegenContext, to_address: str|c_ast.Exp) -> list[IR]:
     if isinstance(to_address, str):
         irs: List[IR] = []
-        irs.append(LI(Register(RegNo.A0), str(-ctx.query_var(to_address))))
+        irs.append(ADDI(Register(RegNo.A0), Register(RegNo.FP), str(-ctx.query_var(to_address))))
         return irs
     if isinstance(to_address, c_ast.Idt):
         irs: List[IR] = []
-        irs.append(LI(Register(RegNo.A0), str(-ctx.query_var(to_address.idt.value))))
-    raise Exception('')
+        # 最终生成的地址是
+        irs.append(ADDI(Register(RegNo.A0), Register(RegNo.FP), str(-ctx.query_var(to_address.idt.value))))
+        return irs
+    if isinstance(to_address, c_ast.UExp) and to_address.op == c_ast.UOp.DEREF:
+        irs: List[IR] = []
+        # 对子表达式求值
+        irs.extend(codegen_ast2ir_exp(ctx, to_address.exp))
+        return irs
+    raise Exception(f'can not be addressed: {to_address}')
 
 def codegen_ast2ir_exp(ctx: CodegenContext, exp: c_ast.Exp) -> list[IR]:
     result: list[IR] = []
@@ -345,20 +419,24 @@ def codegen_ast2ir_exp(ctx: CodegenContext, exp: c_ast.Exp) -> list[IR]:
     elif isinstance(exp, c_ast.BinExp):
         # 赋值表达式单独进行处理
         if exp.op == c_ast.BinOp.ASN:
-            if not isinstance(exp.l, c_ast.Idt):
-                raise Exception('')
+            # 任何有左地址的都可以进行赋值运算
+            # if not isinstance(exp.l, c_ast.Idt):
+            #     raise Exception('')
             # 1.生成左子表达式的地址
-            result.append(LI(Register(RegNo.A0), str(-ctx.query_var(exp.l.idt.value))))
+            result.extend(codegen_address(ctx, exp.l))
+            # result.append(LI(Register(RegNo.A0), str(-ctx.query_var(exp.l.idt.value))))
             # 2.a0压栈
-            result.append(ADDI(Register(RegNo.SP), Register(RegNo.SP), '-8'))
-            result.append(SD(Register(RegNo.A0), '0', Register(RegNo.SP)))
+            result.extend(codegen_ast2ir_reg_save(Register(RegNo.A0)))
+            # result.append(ADDI(Register(RegNo.SP), Register(RegNo.SP), '-8'))
+            # result.append(SD(Register(RegNo.A0), '0', Register(RegNo.SP)))
             # 3.生成右子表达式的值
             result.extend(codegen_ast2ir_exp(ctx, exp.r))
             # 4.出栈到a1
-            result.append(LD(Register(RegNo.A1), '0', Register(RegNo.SP)))
-            result.append(ADDI(Register(RegNo.SP), Register(RegNo.SP), '8'))
-            # 5.sd a0, 地址(fp)
-            result.append(SD(Register(RegNo.A0), str(-ctx.query_var(exp.l.idt.value)), Register(RegNo.FP)))
+            result.extend(codegen_ast2ir_reg_load(Register(RegNo.A1)))
+            # result.append(LD(Register(RegNo.A1), '0', Register(RegNo.SP)))
+            # result.append(ADDI(Register(RegNo.SP), Register(RegNo.SP), '8'))
+            # 5.sd a0, 0(a1)
+            result.append(SD(Register(RegNo.A0), '0', Register(RegNo.A1)))
             return result
         # 1.生成右子表达式
         result.extend(codegen_ast2ir_exp(ctx, exp.r))
@@ -408,8 +486,29 @@ def codegen_ast2ir_exp(ctx: CodegenContext, exp: c_ast.Exp) -> list[IR]:
         elif exp.op == c_ast.UOp.SUB:
             result.append(LI(Register(RegNo.A1), '0'))
             result.append(SUB(Register(RegNo.A0), Register(RegNo.A1), Register(RegNo.A0)))
+        elif exp.op == c_ast.UOp.REF:
+            result.extend(codegen_address(ctx, exp.exp))
+        elif exp.op == c_ast.UOp.DEREF:
+            result.extend(codegen_ast2ir_exp(ctx, exp.exp))
+            result.append(LD(Register(RegNo.A0), '0', Register(RegNo.A0)))
+        else:
+            raise Exception('')
     elif isinstance(exp, c_ast.Idt):
         result.append(LD(Register(RegNo.A0), str(-ctx.query_var(exp.idt.value)), Register(RegNo.FP)))
+    elif isinstance(exp, c_ast.Call):
+        # 1.准备参数
+        for inarg in exp.inargs:
+            result.extend(codegen_ast2ir_exp(ctx, inarg))
+            # 压栈
+            result.extend(codegen_ast2ir_reg_save(Register(RegNo.A0)))
+        # 2.反向出栈
+        for i in range(len(exp.inargs)-1, -1, -1):
+            reg = list(RegNo)[i]
+            result.extend(codegen_ast2ir_reg_load(Register(reg)))
+        # 3.生成调用标签
+        if not isinstance(exp.func_source, c_ast.Idt):
+            raise Exception('')
+        result.append(CALL(exp.func_source.idt.value))
     else:
         raise Exception('')
     return result
@@ -418,20 +517,23 @@ def codegen_ast2ir_retcontent(ctx: CodegenContext) -> list[IR]:
     # 返回的操作
     # 1.sp = fp
     # 2.fp出栈
-    # 3.ret
+    # 3.ra出栈
+    # 4.ret
     irs: list[IR] = [
-        Label('.L.return'),
+        Label(f'.L.{ctx.func_name}.return'),
         ADDI(Register(RegNo.SP), Register(RegNo.SP), str(ctx.frame_length)),
         MV(Register(RegNo.SP), Register(RegNo.FP)),
     ]
     irs.extend(codegen_ast2ir_reg_load(Register(RegNo.FP)))
+    irs.extend(codegen_ast2ir_reg_load(Register(RegNo.RA)))
     irs.append(RET())
     return irs
 
-def codegen_ast2ir(ast: c_ast.Stmt) -> list[IR]:
+def codegen_ast2ir(ast: list[c_ast.VarDefsStmt]) -> list[IR]:
     ctx = CodegenContext()
-    irs: list[IR] = [PreOrder('globl', 'main'), Label('main')]
-    irs.extend(codegen_ast2ir_prog(ctx, ast))
+    irs: list[IR] = []
+    for item in ast:
+        irs.extend(codegen_ast2ir_global_vardefs(ctx, item))
     return irs
 
 
@@ -451,6 +553,8 @@ def codegen_ir2asm(irs: List[IR]) -> str:
                 code += f'    j {ir.dest}\n'
             elif isinstance(ir, BEQZ):
                 code += f"    beqz {ir.src.no.name.lower()}, {ir.dest}\n"
+            elif isinstance(ir, CALL):
+                code += f"    call {ir.dest}\n"
             elif isinstance(ir, MV):
                 code += f"    mv {ir.dest.no.name.lower()}, {ir.src.no.name.lower()}\n"
             elif isinstance(ir, ADDI):
@@ -479,7 +583,7 @@ def codegen_ir2asm(irs: List[IR]) -> str:
                 code += f"    ld {ir.dest.no.name.lower()}, {ir.offset}({ir.base.no.name.lower()})\n"
     return code
 
-def codegen(ast: c_ast.Stmt) -> str:
+def codegen(ast: list[c_ast.VarDefsStmt]) -> str:
     irs = codegen_ast2ir(ast)
     code = codegen_ir2asm(irs)
     return code

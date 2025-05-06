@@ -1,10 +1,16 @@
-from enum import Enum, auto
+import enum
 
-class RegNo(Enum):
-    FP = auto()
-    SP = auto()
-    A0 = auto()
-    A1 = auto()
+class RegNo(enum.IntEnum):
+    A0 = enum.auto()
+    A1 = enum.auto()
+    A2 = enum.auto()
+    A3 = enum.auto()
+    A4 = enum.auto()
+    A5 = enum.auto()
+    A6 = enum.auto()
+    RA = enum.auto()
+    FP = enum.auto()
+    SP = enum.auto()
 
 class Register:
     def __init__(self, no: RegNo):
@@ -57,6 +63,11 @@ class BEQZ(Instruction):
     def __init__(self, src: Register, dest: str):
         super().__init__()
         self.src = src
+        self.dest = dest
+
+class CALL(Instruction):
+    def __init__(self, dest: str):
+        super().__init__()
         self.dest = dest
 
 # 移动寄存器的值
