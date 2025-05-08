@@ -67,11 +67,19 @@ class Idt(Exp):
         super().__init__()
         self.idt = idt
 
+# 调用
 class Call(Exp):
     def __init__(self, func_source: Exp, inargs: list[Exp]):
         super().__init__()
         self.func_source = func_source
         self.inargs = inargs
+
+# 下标运算
+class Index(Exp):
+    def __init__(self, source: Exp, index: Exp):
+        super().__init__()
+        self.source = source
+        self.index = index
 
 # stmt
 class Stmt:
@@ -92,6 +100,7 @@ class BlkStmt(Stmt):
 class VarDescribe:
     def __init__(self):
         super().__init__()
+        self.t: ctype.CType|None = None
     
     def get_type(self) -> ctype.CType:
         raise Exception('')
@@ -153,6 +162,24 @@ class FuncVarDescribe(VarDescribe):
     
     def is_funcdef(self) -> bool:
         return self.body is not None
+
+class AryVarDescribe(VarDescribe):
+    def __init__(self, vardescribe: VarDescribe, length: int):
+        super().__init__()
+        self.vardescribe = vardescribe
+        self.length = length
+        self.t: ctype.CType|None = None
+    
+    def get_type(self) -> ctype.CType:
+        if self.t is None:
+            raise Exception('')
+        return self.t
+    
+    def get_name(self) -> str:
+        return self.vardescribe.get_name()
+    
+    def is_funcdef(self) -> bool:
+        return False
 
 class RetStmt(Stmt):
     def __init__(self, value: Exp|None):

@@ -2,5 +2,6 @@
 
 int main() {
 	printf("Hello, world!\n");
-return 9;
+	int a[2][4];
+	return a[2][0];
 }

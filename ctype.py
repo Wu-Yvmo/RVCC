@@ -27,6 +27,16 @@ class Ptr(CType):
     def length(self) -> int:
         return 8
 
+# 数组
+class Ary(CType):
+    def __init__(self, base: CType, length: int):
+        super().__init__()
+        self.base = base
+        self.len = length
+    
+    def length(self) -> int:
+        return self.base.length() * self.len
+    
 class Func(CType):
     def __init__(self, args: list[CType], ret: CType):
         super().__init__()

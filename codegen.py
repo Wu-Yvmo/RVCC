@@ -1,4 +1,5 @@
 import c_ast
+import ctype
 from ir import *
 from typing import * # type: ignore
 
@@ -77,6 +78,7 @@ class CodegenContext:
         self.for_counter = 0
         # while标号的计数器
         self.while_counter = 0
+        # 当前正在处理的函数的名字
         self.func_name = ''
     
     def init_frame_length(self, vardefs: c_ast.VarDefsStmt):
@@ -87,8 +89,8 @@ class CodegenContext:
         frame_0: list[varinfo.VarInfo] = []
         for param in vardefs.var_describes[0].params:
             vi = varinfo.VarInfo(param.var_describes[0].get_name())
-            # pt = param.var_describes[0].get_type()
-            self.frame_length += 8
+            vi.t = param.var_describes[0].get_type()
+            self.frame_length += vi.t.length()
             vi.offset = self.frame_length
             frame_0.append(vi)
         self.frame_tracker.append(frame_0)
@@ -100,9 +102,12 @@ class CodegenContext:
         raise Exception('')
 
     def __init_frame_length_blkstmt(self, blkstmt: c_ast.BlkStmt):
+        # 现在的主要问题在变量编址上 数组
         # 按照测试用例的要求，变量在栈上的存储方式是类似数组的
         for varinfo in blkstmt.varinfos[::-1]:
-            self.frame_length += 8
+            if varinfo.t is None:
+                raise Exception('')
+            self.frame_length += varinfo.t.length()
             varinfo.offset = self.frame_length
         # 累加所有子blk
         for stmt in blkstmt.stmts:
@@ -299,6 +304,9 @@ def codegen_ast2ir_vardef(ctx: CodegenContext, vardescribe: c_ast.VarDescribe) -
         return []
     if isinstance(vardescribe, c_ast.FuncVarDescribe):
         pass
+    if isinstance(vardescribe, c_ast.AryVarDescribe):
+        # 不需要做什么
+        return []
     raise Exception('')
 
 # 现在有个问题 return 的 正文不需要跳转
@@ -401,7 +409,7 @@ def codegen_address(ctx: CodegenContext, to_address: str|c_ast.Exp) -> list[IR]:
         return irs
     if isinstance(to_address, c_ast.Idt):
         irs: List[IR] = []
-        # 最终生成的地址是
+        # 最终生成的地址
         irs.append(ADDI(Register(RegNo.A0), Register(RegNo.FP), str(-ctx.query_var(to_address.idt.value))))
         return irs
     if isinstance(to_address, c_ast.UExp) and to_address.op == c_ast.UOp.DEREF:
@@ -494,7 +502,10 @@ def codegen_ast2ir_exp(ctx: CodegenContext, exp: c_ast.Exp) -> list[IR]:
         else:
             raise Exception('')
     elif isinstance(exp, c_ast.Idt):
-        result.append(LD(Register(RegNo.A0), str(-ctx.query_var(exp.idt.value)), Register(RegNo.FP)))
+        if isinstance(exp.type, ctype.Ary):
+            result.extend(codegen_address(ctx, exp))
+        else:
+            result.append(LD(Register(RegNo.A0), str(-ctx.query_var(exp.idt.value)), Register(RegNo.FP)))
     elif isinstance(exp, c_ast.Call):
         # 1.准备参数
         for inarg in exp.inargs:

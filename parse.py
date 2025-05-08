@@ -98,7 +98,24 @@ def parse_num(ctx: ParseContext) -> c_ast.Exp:
         e = c_ast.Idt(i)
         add_type(ctx, e)
         # 对函数调用的情况做处理
-        if ctx.current().token_type == ctoken.CTokenType.PC_L_ROUND_BRACKET:
+        while ctx.current().token_type == ctoken.CTokenType.PC_L_ROUND_BRACKET or ctx.current().token_type == ctoken.CTokenType.PC_L_SQUARE_BRACKET:
+            if ctx.current().token_type == ctoken.CTokenType.PC_L_SQUARE_BRACKET:
+                ctx.iter()
+                idx = parse_exp(ctx)
+                ctx.iter()
+                if not isinstance(e.type, ctype.Ary) and not isinstance(e.type, ctype.Ptr):
+                    raise Exception(f'index error: {e.type}')
+                # 构造常量
+                const_num = c_ast.Num(e.type.base.length())
+                add_type(ctx, const_num)
+                # 常量乘以偏移量
+                offset = c_ast.BinExp(idx, c_ast.BinOp.MUL, const_num)
+                add_type(ctx, offset)
+                e = c_ast.BinExp(e, c_ast.BinOp.ADD, offset)
+                add_type(ctx, e)
+                e = c_ast.UExp(c_ast.UOp.DEREF, e)
+                add_type(ctx, e)
+                continue
             ctx.iter()
             inargs: list[c_ast.Exp] = []
             while ctx.current().token_type != ctoken.CTokenType.PC_R_ROUND_BRACKET:
@@ -237,6 +254,7 @@ def parse_stmt_blk(ctx: ParseContext) -> c_ast.Stmt:
         if isinstance(stmt, c_ast.VarDefsStmt):
             for vardef in stmt.var_describes:
                 vi = varinfo.VarInfo(vardef.get_name())
+                vi.t = vardef.get_type()
                 blkstmt.varinfos.append(vi)
     ctx.exit_scope()
     return blkstmt
@@ -246,7 +264,7 @@ def parse_stmt_blk(ctx: ParseContext) -> c_ast.Stmt:
 def parse_stmt_vardefs(ctx: ParseContext) -> c_ast.Stmt:
     t = parse_type(ctx)
     vardescribes: list[c_ast.VarDescribe] = [parse_vardescribe(ctx, t)]
-    # 如果我们解析了一个函数定义，那就应当直接返回
+    # 如果我们解析了一个函数定义，那就应当注册函数名到type_tracker中 然后直接返回
     if vardescribes[0].is_funcdef():
         # 把函数名注册为函数变量
         ctx.register_var_type(vardescribes[0].get_name(), vardescribes[0].get_type())
@@ -270,12 +288,15 @@ def parse_vardescribe(ctx: ParseContext, t: ctype.CType) -> c_ast.VarDescribe:
 
 def parse_vardescribe_prefix(ctx: ParseContext, t: ctype.CType) -> c_ast.VarDescribe:
     if ctx.current().token_type == ctoken.CTokenType.OP_MUL:
-        t = ctype.Ptr(t)
+        # 这里的Parse逻辑有问题
         ctx.iter()
-        return parse_vardescribe_prefix(ctx, t)
+        cur_vardescribe = parse_vardescribe_prefix(ctx, t)
+        cur_vardescribe.t = ctype.Ptr(cur_vardescribe.get_type())
+        return cur_vardescribe
     return parse_vardescribe_suffix(ctx, t)
 
 # 后缀
+# suffix应当在处理完所有的代码后进行suffix处理
 def parse_vardescribe_suffix(ctx: ParseContext, t: ctype.CType) -> c_ast.VarDescribe:
     # 对常规的vardescribe进行parse
     name = ctx.current()
@@ -289,35 +310,80 @@ def parse_vardescribe_suffix(ctx: ParseContext, t: ctype.CType) -> c_ast.VarDesc
     elif ctx.current().token_type == ctoken.CTokenType.PC_SEMICOLON:
         return normal
     elif ctx.current().token_type == ctoken.CTokenType.PC_L_ROUND_BRACKET:
-        # 对函数进行parse
-        ctx.iter()
-        params: list[c_ast.VarDefsStmt] = []
-        while not ctx.end() and ctx.current().token_type != ctoken.CTokenType.PC_R_ROUND_BRACKET:
-            params.append(parse_param(ctx))
-            if ctx.current().token_type == ctoken.CTokenType.PC_COMMA:
-                ctx.iter()
-        ctx.iter()
-        # 对param的所有item进行处理
-        params_types: list[ctype.CType] = []
-        for param in params:
-            params_type = param.var_describes[0].get_type()
-            params_types.append(params_type)
-        body: c_ast.Stmt|None = None
-        if ctx.current().token_type == ctoken.CTokenType.PC_L_CURLY_BRACKET:
-            # 正在解析函数体，在正式解析前需要把所有的变量都注册到query中
-            ctx.enter_scope()
-            for param in params:
-                ctx.register_var_type(param.var_describes[0].get_name(), param.var_describes[0].get_type())
-            body = parse_stmt_blk(ctx)
-            ctx.exit_scope()
-            neo_normal = c_ast.FuncVarDescribe(normal, params, body)
-            neo_normal.t = ctype.Func(params_types, normal.get_type())
-            normal = neo_normal
-        else:
-            neo_normal = c_ast.FuncVarDescribe(normal, params, None)
-            neo_normal.t = ctype.Func(params_types, normal.get_type())
-            normal = neo_normal
+        return parse_vardescribe_suffix_func(ctx, normal)
+    elif ctx.current().token_type == ctoken.CTokenType.PC_L_SQUARE_BRACKET:
+        return parse_vardescribe_suffix_ary(ctx, normal)
     return normal
+
+def parse_vardescribe_suffix_ary(ctx: ParseContext, original_vardescribe: c_ast.VarDescribe) -> c_ast.VarDescribe:
+    # 对常规的vardescribe进行parse
+    ctx.iter()
+    idx = int(ctx.current().value)
+    ctx.iter()
+    ctx.iter()
+    if ctx.current().token_type == ctoken.CTokenType.PC_L_ROUND_BRACKET:
+        sub_vardescribe = parse_vardescribe_suffix_func(ctx, original_vardescribe)
+        sub_t = sub_vardescribe.get_type()
+        cur_t = ctype.Ary(sub_t, idx)
+        cur_vardescribe = c_ast.AryVarDescribe(original_vardescribe, idx)
+        cur_vardescribe.t = cur_t
+        return cur_vardescribe
+    elif ctx.current().token_type == ctoken.CTokenType.PC_L_SQUARE_BRACKET:
+        sub_vardescribe = parse_vardescribe_suffix_ary(ctx, original_vardescribe)
+        sub_t = sub_vardescribe.get_type()
+        cur_t = ctype.Ary(sub_t, idx)
+        cur_vardescribe = c_ast.AryVarDescribe(original_vardescribe, idx)
+        cur_vardescribe.t = cur_t
+        return cur_vardescribe
+    # 到这里说明这是数组修饰符的终点了，在original_vardescribe的基础上构建数组类型
+    cur_vardescribe = c_ast.AryVarDescribe(original_vardescribe, idx)
+    cur_vardescribe.t = ctype.Ary(original_vardescribe.get_type(), idx)
+    return cur_vardescribe
+
+
+def parse_vardescribe_suffix_func(ctx: ParseContext,  original_vardescribe: c_ast.VarDescribe) -> c_ast.VarDescribe:
+    ctx.iter()
+    params: list[c_ast.VarDefsStmt] = []
+    while not ctx.end() and ctx.current().token_type != ctoken.CTokenType.PC_R_ROUND_BRACKET:
+        params.append(parse_param(ctx))
+        if ctx.current().token_type == ctoken.CTokenType.PC_COMMA:
+            ctx.iter()
+    ctx.iter()
+    # 对params的所有item进行处理
+    params_types: list[ctype.CType] = []
+    for param in params:
+        params_type = param.var_describes[0].get_type()
+        params_types.append(params_type)
+    body: c_ast.Stmt|None = None
+    if ctx.current().token_type == ctoken.CTokenType.PC_L_CURLY_BRACKET:
+        # 正在解析函数定义，在正式解析前需要把所有的变量都注册到query中
+        ctx.enter_scope()
+        for param in params:
+            ctx.register_var_type(param.var_describes[0].get_name(), param.var_describes[0].get_type())
+        body = parse_stmt_blk(ctx)
+        ctx.exit_scope()
+        neo_original_vardescribe = c_ast.FuncVarDescribe(original_vardescribe, params, body)
+        neo_original_vardescribe.t = ctype.Func(params_types, original_vardescribe.get_type())
+        # 因为解析完函数体后已经没有必要继续 试图解析剩余的修饰了，这里直接return
+        return neo_original_vardescribe
+    if ctx.current().token_type == ctoken.CTokenType.PC_L_ROUND_BRACKET:
+        sub_vardescribe = parse_vardescribe_suffix_func(ctx, original_vardescribe)
+        sub_t = sub_vardescribe.get_type()
+        cur_t = ctype.Func(params_types, sub_t)
+        cur_vardescribe = c_ast.FuncVarDescribe(original_vardescribe, params, None)
+        cur_vardescribe.t = cur_t
+        return cur_vardescribe
+    if ctx.current().token_type == ctoken.CTokenType.PC_L_SQUARE_BRACKET:
+        sub_vardescribe = parse_vardescribe_suffix_ary(ctx, original_vardescribe)
+        sub_t = sub_vardescribe.get_type()
+        cur_t = ctype.Func(params_types, sub_t)
+        cur_vardescribe = c_ast.FuncVarDescribe(original_vardescribe, params, None)
+        cur_vardescribe.t = cur_t
+        return cur_vardescribe
+    # 说明已经是函数声明的结尾了，应当使用original_describe构造函数声明
+    neo_original_vardescribe = c_ast.FuncVarDescribe(original_vardescribe, params, None)
+    neo_original_vardescribe.t = ctype.Func(params_types, original_vardescribe.get_type())
+    return neo_original_vardescribe
 
 def parse_param(ctx: ParseContext) -> c_ast.VarDefsStmt:
     t = parse_type(ctx)
@@ -388,12 +454,21 @@ def add_type(ctx: ParseContext, exp: c_ast.Exp):
         if not isinstance(func_type, ctype.Func):
             raise Exception('')
         exp.type = func_type.ret
+    # 把下标运算转译为a[b] -> *(a + b * offset)
+    elif isinstance(exp, c_ast.Index):
+        if not isinstance(exp.type, ctype.Ary):
+            raise Exception('')
+        exp.type = exp.type.base
     elif isinstance(exp, c_ast.BinExp):
         if exp.op == c_ast.BinOp.ADD:
             if isinstance(exp.l.type, ctype.Ptr) and not isinstance(exp.r.type, ctype.Ptr):
                 exp.type = exp.l.type
             elif not isinstance(exp.l.type, ctype.Ptr) and isinstance(exp.r.type, ctype.Ptr):
                 exp.type = exp.r.type
+            elif isinstance(exp.l.type, ctype.Ary) and not isinstance(exp.r.type, ctype.Ary):
+                exp.type = ctype.Ptr(exp.l.type.base)
+            elif not isinstance(exp.l.type, ctype.Ary) and isinstance(exp.r.type, ctype.Ary):
+                exp.type = ctype.Ptr(exp.r.type.base)
             else:
                 exp.type = ctype.I64()
         elif exp.op == c_ast.BinOp.SUB:
