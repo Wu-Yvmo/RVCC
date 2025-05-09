@@ -81,52 +81,71 @@ def parse_binop(ctx: ParseContext) -> c_ast.BinOp:
     raise Exception()
 
 def parse_num(ctx: ParseContext) -> c_ast.Exp:
+    e: c_ast.Exp|None = None
     if ctx.current().token_type == ctoken.CTokenType.NUMBER:
         t = ctx.current()
         ctx.iter()
         e = c_ast.Num(int(t.value))
         add_type(ctx, e)
-        return e
     elif ctx.current().token_type == ctoken.CTokenType.PC_L_ROUND_BRACKET:
         ctx.iter()
-        exp = parse_exp(ctx)
+        e = parse_exp(ctx)
         ctx.iter()
-        return exp
     elif ctx.current().token_type == ctoken.CTokenType.IDENTIFIER:
         i = ctx.current()
         ctx.iter()
         e = c_ast.Idt(i)
         add_type(ctx, e)
-        # 对函数调用的情况做处理
-        while ctx.current().token_type == ctoken.CTokenType.PC_L_ROUND_BRACKET or ctx.current().token_type == ctoken.CTokenType.PC_L_SQUARE_BRACKET:
-            if ctx.current().token_type == ctoken.CTokenType.PC_L_SQUARE_BRACKET:
-                ctx.iter()
-                idx = parse_exp(ctx)
-                ctx.iter()
-                if not isinstance(e.type, ctype.Ary) and not isinstance(e.type, ctype.Ptr):
-                    raise Exception(f'index error: {e.type}')
+    else:
+        raise Exception('')
+    # 对函数调用的情况做处理
+    while ctx.current().token_type == ctoken.CTokenType.PC_L_ROUND_BRACKET or ctx.current().token_type == ctoken.CTokenType.PC_L_SQUARE_BRACKET:
+        # 数组下标
+        if ctx.current().token_type == ctoken.CTokenType.PC_L_SQUARE_BRACKET:
+            ctx.iter()
+            idx = parse_exp(ctx)
+            ctx.iter()
+            # e[idx]中，必须满足 'e是指针/数组，idx是整形' 或 'e是整形，idx是指针'
+            if (not isinstance(e.type, ctype.Ary) and not isinstance(e.type, ctype.Ptr)) and \
+                (not isinstance(idx.type, ctype.Ary) and not isinstance(idx.type, ctype.Ptr)):
+                raise Exception(f'index error: {e.type}, {e}, {idx.type}, {idx}')
+            # 分别处理 整型[指针/数组] 和 指针/数组[整型] 的情况
+            # 构造常量
+            if isinstance(idx.type, ctype.Ary) or isinstance(idx.type, ctype.Ptr):
                 # 构造常量
-                const_num = c_ast.Num(e.type.base.length())
+                const_num = c_ast.Num(idx.type.base.length())
                 add_type(ctx, const_num)
                 # 常量乘以偏移量
-                offset = c_ast.BinExp(idx, c_ast.BinOp.MUL, const_num)
+                offset = c_ast.BinExp(e, c_ast.BinOp.MUL, const_num)
                 add_type(ctx, offset)
-                e = c_ast.BinExp(e, c_ast.BinOp.ADD, offset)
+                e = c_ast.BinExp(offset, c_ast.BinOp.ADD, idx)
                 add_type(ctx, e)
                 e = c_ast.UExp(c_ast.UOp.DEREF, e)
                 add_type(ctx, e)
                 continue
-            ctx.iter()
-            inargs: list[c_ast.Exp] = []
-            while ctx.current().token_type != ctoken.CTokenType.PC_R_ROUND_BRACKET:
-                inargs.append(parse_exp(ctx))
-                if ctx.current().token_type == ctoken.CTokenType.PC_COMMA:
-                    ctx.iter()
-            ctx.iter()
-            e = c_ast.Call(e, inargs)
+            if not isinstance(e.type, ctype.Ary) and not isinstance(e.type, ctype.Ptr):
+                raise Exception('')
+            const_num = c_ast.Num(e.type.base.length())
+            add_type(ctx, const_num)
+            # 常量乘以偏移量
+            offset = c_ast.BinExp(idx, c_ast.BinOp.MUL, const_num)
+            add_type(ctx, offset)
+            e = c_ast.BinExp(e, c_ast.BinOp.ADD, offset)
             add_type(ctx, e)
-        return e
-    raise Exception(f'meet token: {ctx.current().token_type.name}')
+            e = c_ast.UExp(c_ast.UOp.DEREF, e)
+            add_type(ctx, e)
+            continue
+        # 函数调用
+        ctx.iter()
+        inargs: list[c_ast.Exp] = []
+        while ctx.current().token_type != ctoken.CTokenType.PC_R_ROUND_BRACKET:
+            inargs.append(parse_exp(ctx))
+            if ctx.current().token_type == ctoken.CTokenType.PC_COMMA:
+                ctx.iter()
+        ctx.iter()
+        e = c_ast.Call(e, inargs)
+        add_type(ctx, e)
+    return e
 
 def parse_uexp(ctx: ParseContext) -> c_ast.Exp:
     if (ctx.current().token_type == ctoken.CTokenType.OP_ADD or 
@@ -159,15 +178,15 @@ def parse_binexp_add(ctx: ParseContext) -> c_ast.Exp:
         # 在这里进行指针运算的修正
         # （暂时还没有做）
         if isinstance(l.l.type, ctype.Ptr) and not isinstance(l.r.type, ctype.Ptr):
-            literal_8 = c_ast.Num(8)
-            add_type(ctx, literal_8)
-            neo_r = c_ast.BinExp(l.r, c_ast.BinOp.MUL, literal_8)
+            const_len = c_ast.Num(l.l.type.base.length())
+            add_type(ctx, const_len)
+            neo_r = c_ast.BinExp(l.r, c_ast.BinOp.MUL, const_len)
             add_type(ctx, neo_r)
             l.r = neo_r
         elif not isinstance(l.l.type, ctype.Ptr) and isinstance(l.r.type, ctype.Ptr):
-            literal_8 = c_ast.Num(8)
-            add_type(ctx, literal_8)
-            neo_l = c_ast.BinExp(l.l, c_ast.BinOp.MUL, literal_8)
+            const_len = c_ast.Num(l.r.type.length())
+            add_type(ctx, const_len)
+            neo_l = c_ast.BinExp(l.l, c_ast.BinOp.MUL, const_len)
             add_type(ctx, neo_l)
             l.l = neo_l
         elif isinstance(l.l.type, ctype.Ptr) and isinstance(l.r.type, ctype.Ptr):
@@ -176,6 +195,18 @@ def parse_binexp_add(ctx: ParseContext) -> c_ast.Exp:
             literal_8 = c_ast.Num(8)
             add_type(ctx, literal_8)
             l = c_ast.BinExp(l, c_ast.BinOp.DIV, literal_8)
+        elif isinstance(l.l.type, ctype.Ary) and not isinstance(l.r.type, ctype.Ary):
+            const_len = c_ast.Num(l.l.type.base.length())
+            add_type(ctx, const_len)
+            neo_r = c_ast.BinExp(l.r, c_ast.BinOp.MUL, const_len)
+            add_type(ctx, neo_r)
+            l.r = neo_r
+        elif not isinstance(l.l.type, ctype.Ary) and isinstance(l.r.type, ctype.Ary):
+            const_len = c_ast.Num(l.r.type.length())
+            add_type(ctx, const_len)
+            neo_l = c_ast.BinExp(l.l, c_ast.BinOp.MUL, const_len)
+            add_type(ctx, neo_l)
+            l.l = neo_l
         add_type(ctx, l)
     return l
 
@@ -284,11 +315,15 @@ def parse_type(ctx: ParseContext) -> ctype.CType:
     raise Exception('')
 
 def parse_vardescribe(ctx: ParseContext, t: ctype.CType) -> c_ast.VarDescribe:
-    return parse_vardescribe_prefix(ctx, t)
+    # 应当把初始化值的初始化提前到那个什么地方中
+    vardescribe = parse_vardescribe_prefix(ctx, t)
+    if not ctx.end() and ctx.current().token_type == ctoken.CTokenType.OP_ASN:
+        ctx.iter()
+        vardescribe.init = parse_exp(ctx)
+    return vardescribe
 
 def parse_vardescribe_prefix(ctx: ParseContext, t: ctype.CType) -> c_ast.VarDescribe:
     if ctx.current().token_type == ctoken.CTokenType.OP_MUL:
-        # 这里的Parse逻辑有问题
         ctx.iter()
         cur_vardescribe = parse_vardescribe_prefix(ctx, t)
         cur_vardescribe.t = ctype.Ptr(cur_vardescribe.get_type())
@@ -303,13 +338,13 @@ def parse_vardescribe_suffix(ctx: ParseContext, t: ctype.CType) -> c_ast.VarDesc
     ctx.iter()
     normal: c_ast.VarDescribe = c_ast.NormalVarDescribe(name, None)
     normal.t = t
-    if ctx.current().token_type == ctoken.CTokenType.OP_ASN:
-        ctx.iter()
-        normal.init = parse_exp(ctx)
-        return normal
-    elif ctx.current().token_type == ctoken.CTokenType.PC_SEMICOLON:
-        return normal
-    elif ctx.current().token_type == ctoken.CTokenType.PC_L_ROUND_BRACKET:
+    # if ctx.current().token_type == ctoken.CTokenType.OP_ASN:
+    #     ctx.iter()
+    #     normal.init = parse_exp(ctx)
+    #     return normal
+    # if ctx.current().token_type == ctoken.CTokenType.PC_SEMICOLON:
+    #     return normal
+    if ctx.current().token_type == ctoken.CTokenType.PC_L_ROUND_BRACKET:
         return parse_vardescribe_suffix_func(ctx, normal)
     elif ctx.current().token_type == ctoken.CTokenType.PC_L_SQUARE_BRACKET:
         return parse_vardescribe_suffix_ary(ctx, normal)
@@ -499,8 +534,8 @@ def add_type(ctx: ParseContext, exp: c_ast.Exp):
         elif exp.op == c_ast.UOp.REF:
             exp.type = ctype.Ptr(exp.exp.type)
         elif exp.op == c_ast.UOp.DEREF:
-            if not isinstance(exp.exp.type, ctype.Ptr):
-                raise Exception('')
+            if not isinstance(exp.exp.type, ctype.Ptr) and not isinstance(exp.exp.type, ctype.Ary):
+                raise Exception(f'{exp.exp} {exp.exp.type}')
             exp.type = exp.exp.type.base
         else:
             raise Exception('')

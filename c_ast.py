@@ -101,6 +101,7 @@ class VarDescribe:
     def __init__(self):
         super().__init__()
         self.t: ctype.CType|None = None
+        self.init: Exp|None = None
     
     def get_type(self) -> ctype.CType:
         raise Exception('')

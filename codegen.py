@@ -307,6 +307,7 @@ def codegen_ast2ir_vardef(ctx: CodegenContext, vardescribe: c_ast.VarDescribe) -
     if isinstance(vardescribe, c_ast.AryVarDescribe):
         # 不需要做什么
         return []
+    # if isinstance(vardescribe, c_ast.PtrVarDe)
     raise Exception('')
 
 # 现在有个问题 return 的 正文不需要跳转
@@ -496,9 +497,12 @@ def codegen_ast2ir_exp(ctx: CodegenContext, exp: c_ast.Exp) -> list[IR]:
             result.append(SUB(Register(RegNo.A0), Register(RegNo.A1), Register(RegNo.A0)))
         elif exp.op == c_ast.UOp.REF:
             result.extend(codegen_address(ctx, exp.exp))
-        elif exp.op == c_ast.UOp.DEREF:
+        elif exp.op == c_ast.UOp.DEREF:# 那么问题就在于 任何情况下deref都应当直接load吗
             result.extend(codegen_ast2ir_exp(ctx, exp.exp))
-            result.append(LD(Register(RegNo.A0), '0', Register(RegNo.A0)))
+            if isinstance(exp.type, ctype.Ary):
+                pass
+            else:
+                result.append(LD(Register(RegNo.A0), '0', Register(RegNo.A0)))
         else:
             raise Exception('')
     elif isinstance(exp, c_ast.Idt):

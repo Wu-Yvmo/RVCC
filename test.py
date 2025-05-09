@@ -76,10 +76,63 @@ test_items = [
     (r'int add6(int a1, int a2, int a3, int a4, int a5, int a6) {return a1 + a2 + a3 + a4 + a5 + a6;} int main() { return add6(1,2,add6(3,4,5,6,7,8),9,10,11); }', 66),
     (r'int add6(int a1, int a2, int a3, int a4, int a5, int a6) {return a1 + a2 + a3 + a4 + a5 + a6;} int main() { return add6(1,2,add6(3,add6(4,5,6,7,8,9),10,11,12,13),14,15,16); }', 136),
     (r'int ret32() { return 32; } int main() { return ret32(); }', 32),
+    (r'int main() { int x[2]; int *y=&x; *y=3; return *x; }', 3),
+    (r'int main() { int x[3]; *x=3; *(x+1)=4; *(x+2)=5; return *x; }', 3),
+    (r'int main() { int x[3]; *x=3; *(x+1)=4; *(x+2)=5; return *(x+1); }', 4),
+    (r'int main() { int x[3]; *x=3; *(x+1)=4; *(x+2)=5; return *(x+2); }', 5),
+    (r'int main() { int x[2][3]; int *y=x; *y=0; return **x; }', 0),
+    (r'int main() { int x[2][3]; int *y=x; *(y+1)=1; return *(*x+1); }', 1),
+    (r'int main() { int x[2][3]; int *y=x; *(y+2)=2; return *(*x+2); }', 2),
+    (r'int main() { int x[2][3]; int *y=x; *(y+3)=3; return **(x+1); }', 3),
+    (r'int main() { int x[2][3]; int *y=x; *(y+3)=4; return **(x+1); }', 4),
+    (r'int main() { int x[2][3]; int *y=x; *(y+5)=5; return *(*(x+1)+2); }', 5),
+    (r'int main() { int x[3]; *x=3; x[1]=4; x[2]=5; return *x; }', 3),
+    (r'int main() { int x[3]; *x=3; x[1]=4; x[2]=5; return *(x+1); }', 4),
+    (r'int main() { int x[3]; *x=3; x[1]=4; x[2]=5; return *(x+2); }', 5),
+    (r'int main() { int x[3]; *x=3; x[1]=4; 2[x]=5; return *(x+2); }', 5),
+    (r'int main() { int x[2][3]; int *y=x; y[0]=0; return x[0][0]; }', 0),
+    (r'int main() { int x[2][3]; int *y=x; y[1]=1; return x[0][1]; }', 1),
+    (r'int main() { int x[2][3]; int *y=x; y[2]=2; return x[0][2]; }', 2),
+    (r'int main() { int x[2][3]; int *y=x; y[3]=3; return x[1][0]; }', 3),
+    (r'int main() { int x[2][3]; int *y=x; y[4]=4; return x[1][1]; }', 4),
+    (r'int main() { int x[2][3]; int *y=x; y[5]=5; return x[1][2]; }', 5),
+    # (r'{}', -1),
     # (r'{}', -1),
 ]
 
 test_items = test_items[::-1]
+
+# [27] 支持一维数组
+# assert 3 'int main() { int x[2]; int *y=&x; *y=3; return *x; }'
+# assert 3 'int main() { int x[3]; *x=3; *(x+1)=4; *(x+2)=5; return *x; }'
+# assert 4 'int main() { int x[3]; *x=3; *(x+1)=4; *(x+2)=5; return *(x+1); }'
+# assert 5 'int main() { int x[3]; *x=3; *(x+1)=4; *(x+2)=5; return *(x+2); }'
+
+# [28] 支持多维数组
+# assert 0 'int main() { int x[2][3]; int *y=x; *y=0; return **x; }'
+# assert 1 'int main() { int x[2][3]; int *y=x; *(y+1)=1; return *(*x+1); }'
+# assert 2 'int main() { int x[2][3]; int *y=x; *(y+2)=2; return *(*x+2); }'
+# assert 3 'int main() { int x[2][3]; int *y=x; *(y+3)=3; return **(x+1); }'
+# assert 4 'int main() { int x[2][3]; int *y=x; *(y+4)=4; return *(*(x+1)+1); }'
+# assert 5 'int main() { int x[2][3]; int *y=x; *(y+5)=5; return *(*(x+1)+2); }'
+
+# # [29] 支持 [] 操作符
+# assert 3 'int main() { int x[3]; *x=3; x[1]=4; x[2]=5; return *x; }'
+# assert 4 'int main() { int x[3]; *x=3; x[1]=4; x[2]=5; return *(x+1); }'
+# assert 5 'int main() { int x[3]; *x=3; x[1]=4; x[2]=5; return *(x+2); }'
+# assert 5 'int main() { int x[3]; *x=3; x[1]=4; x[2]=5; return *(x+2); }'
+# assert 5 'int main() { int x[3]; *x=3; x[1]=4; 2[x]=5; return *(x+2); }'
+
+# assert 0 'int main() { int x[2][3]; int *y=x; y[0]=0; return x[0][0]; }'
+
+# assert 1 'int main() { int x[2][3]; int *y=x; y[1]=1; return x[0][1]; }'
+# assert 2 'int main() { int x[2][3]; int *y=x; y[2]=2; return x[0][2]; }'
+# assert 3 'int main() { int x[2][3]; int *y=x; y[3]=3; return x[1][0]; }'
+# assert 4 'int main() { int x[2][3]; int *y=x; y[4]=4; return x[1][1]; }'
+# assert 5 'int main() { int x[2][3]; int *y=x; y[5]=5; return x[1][2]; }'
+
+
+
 
 # [23] 支持零参函数调用
 # assert 3 'int ret3() {return 3; } int main() { return ret3(); }'
