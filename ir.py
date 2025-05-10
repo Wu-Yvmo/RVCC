@@ -77,6 +77,13 @@ class MV(Instruction):
         self.dest = dest
         self.src = src
 
+# la
+class LA(Instruction):
+    def __init__(self, dest: Register, label: str):
+        super().__init__()
+        self.dest = dest
+        self.label = label
+
 # 指令+
 class ADD(Instruction):
     def __init__(self, dest: Register, src1: Register, src2: Register):

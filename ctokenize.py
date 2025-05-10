@@ -3,7 +3,8 @@ import ctoken
 import re
 import sys
 
-patterns = [(r'^if', ctoken.CTokenType.KEY_IF),
+patterns = [(r'^sizeof', ctoken.CTokenType.KEY_SIZEOF),
+            (r'^if', ctoken.CTokenType.KEY_IF),
             (r'^else', ctoken.CTokenType.KEY_ELSE),
             (r'^for', ctoken.CTokenType.KEY_FOR),
             (r'^while', ctoken.CTokenType.KEY_WHILE),

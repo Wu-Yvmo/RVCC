@@ -96,11 +96,58 @@ test_items = [
     (r'int main() { int x[2][3]; int *y=x; y[3]=3; return x[1][0]; }', 3),
     (r'int main() { int x[2][3]; int *y=x; y[4]=4; return x[1][1]; }', 4),
     (r'int main() { int x[2][3]; int *y=x; y[5]=5; return x[1][2]; }', 5),
-    # (r'{}', -1),
-    # (r'{}', -1),
+    (r'int main() { int x; return sizeof(x); }', 8),
+    (r'int main() { int x; return sizeof x; }', 8),
+    (r'int main() { int *x; return sizeof(x); }', 8),
+    (r'int main() { int x[4]; return sizeof(x); }', 32),
+    (r'int main() { int x[3][4]; return sizeof(x); }', 96),
+    (r'int main() { int x[3][4]; return sizeof(*x); }', 32),
+    (r'int main() { int x[3][4]; return sizeof(**x); }', 8),
+    (r'int main() { int x[3][4]; return sizeof(**x) + 1; }', 9),
+    (r'int main() { int x[3][4]; return sizeof **x + 1; }', 9),
+    (r'int main() { int x[3][4]; return sizeof(**x + 1); }', 8),
+    (r'int main() { int x=1; return sizeof(x=2); }', 8),
+    (r'int main() { int x=1; sizeof(x=2); return x; }', 1),
+    (r'int x; int main() { return x; }', 0),
+    (r'int x; int main() { x=3; return x; }', 3),
+    (r'int x; int y; int main() { x=3; y=4; return x+y; }', 7),
+    (r'int x, y; int main() { x=3; y=4; return x+y; }', 7),
+    (r'int x[4]; int main() { x[0]=0; x[1]=1; x[2]=2; x[3]=3; return x[0]; }', 0),
+    (r'int x[4]; int main() { x[0]=0; x[1]=1; x[2]=2; x[3]=3; return x[1]; }', 1),
+    (r'int x[4]; int main() { x[0]=0; x[1]=1; x[2]=2; x[3]=3; return x[2]; }', 2),
+    (r'int x[4]; int main() { x[0]=0; x[1]=1; x[2]=2; x[3]=3; return x[3]; }', 3),
+    (r'int x; int main() { return sizeof(x); }', 8),
+    (r'int x[4]; int main() { return sizeof(x); }', 32),
 ]
 
 test_items = test_items[::-1]
+
+# [32] 支持全局变量
+# assert 0 'int x; int main() { return x; }'
+# assert 3 'int x; int main() { x=3; return x; }'
+# assert 7 'int x; int y; int main() { x=3; y=4; return x+y; }'
+# assert 7 'int x, y; int main() { x=3; y=4; return x+y; }'
+# assert 0 'int x[4]; int main() { x[0]=0; x[1]=1; x[2]=2; x[3]=3; return x[0]; }'
+# assert 1 'int x[4]; int main() { x[0]=0; x[1]=1; x[2]=2; x[3]=3; return x[1]; }'
+# assert 2 'int x[4]; int main() { x[0]=0; x[1]=1; x[2]=2; x[3]=3; return x[2]; }'
+# assert 3 'int x[4]; int main() { x[0]=0; x[1]=1; x[2]=2; x[3]=3; return x[3]; }'
+
+# assert 8 'int x; int main() { return sizeof(x); }'
+# assert 32 'int x[4]; int main() { return sizeof(x); }'
+
+# [30] 支持 sizeof
+# assert 8 'int main() { int x; return sizeof(x); }'
+# assert 8 'int main() { int x; return sizeof x; }'
+# assert 8 'int main() { int *x; return sizeof(x); }'
+# assert 32 'int main() { int x[4]; return sizeof(x); }'
+# assert 96 'int main() { int x[3][4]; return sizeof(x); }'
+# assert 32 'int main() { int x[3][4]; return sizeof(*x); }'
+# assert 8 'int main() { int x[3][4]; return sizeof(**x); }'
+# assert 9 'int main() { int x[3][4]; return sizeof(**x) + 1; }'
+# assert 9 'int main() { int x[3][4]; return sizeof **x + 1; }'
+# assert 8 'int main() { int x[3][4]; return sizeof(**x + 1); }'
+# assert 8 'int main() { int x=1; return sizeof(x=2); }'
+# assert 1 'int main() { int x=1; sizeof(x=2); return x; }'
 
 # [27] 支持一维数组
 # assert 3 'int main() { int x[2]; int *y=&x; *y=3; return *x; }'

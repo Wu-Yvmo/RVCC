@@ -80,6 +80,8 @@ class CodegenContext:
         self.while_counter = 0
         # 当前正在处理的函数的名字
         self.func_name = ''
+        # 全局变量的名称 和 类型
+        # self.glb_var_tracker: dict[str, ctype.CType] = {}
     
     def init_frame_length(self, vardefs: c_ast.VarDefsStmt):
         # 现在是对整个函数进行初始化
@@ -207,6 +209,7 @@ def codegen_ast2ir_global_vardefs(ctx: CodegenContext, vardefs: c_ast.VarDefsStm
         ctx.func_name = vardefs.var_describes[0].get_name()
         # 1.生成全局声明和函数开头
         irs.extend([
+            PreOrder('text', ''),
             PreOrder('globl', vardefs.var_describes[0].get_name()),
             Label(vardefs.var_describes[0].get_name()),
         ])
@@ -245,7 +248,12 @@ def codegen_ast2ir_global_vardefs(ctx: CodegenContext, vardefs: c_ast.VarDefsStm
         irs.extend(codegen_ast2ir_retcontent(ctx))
         return irs
     # 说明是全局变量 暂时没有提供支持
-    raise Exception('')
+    for vardescribe in vardefs.var_describes:
+        irs.append(PreOrder('data', ''))
+        irs.append(PreOrder('globl', f'{vardescribe.get_name()}'))
+        irs.append(Label(f'{vardescribe.get_name()}'))
+        irs.append(PreOrder('zero', f'{vardescribe.get_type().length()}'))
+    return irs
 
 # def codegen_ast2ir_prog(ctx: CodegenContext, prog: c_ast.Stmt) -> list[IR]:
 #     ctx.init_frame_length(prog)
@@ -411,6 +419,11 @@ def codegen_address(ctx: CodegenContext, to_address: str|c_ast.Exp) -> list[IR]:
     if isinstance(to_address, c_ast.Idt):
         irs: List[IR] = []
         # 最终生成的地址
+        if to_address.type is None:
+            raise Exception('')
+        if to_address.type.glb:
+            irs.append(LA(Register(RegNo.A0), to_address.idt.value))
+            return irs
         irs.append(ADDI(Register(RegNo.A0), Register(RegNo.FP), str(-ctx.query_var(to_address.idt.value))))
         return irs
     if isinstance(to_address, c_ast.UExp) and to_address.op == c_ast.UOp.DEREF:
@@ -421,6 +434,8 @@ def codegen_address(ctx: CodegenContext, to_address: str|c_ast.Exp) -> list[IR]:
     raise Exception(f'can not be addressed: {to_address}')
 
 def codegen_ast2ir_exp(ctx: CodegenContext, exp: c_ast.Exp) -> list[IR]:
+    if exp.type is None:
+        raise Exception('')
     result: list[IR] = []
     if isinstance(exp, c_ast.Num):
         result.append(LI(Register(RegNo.A0), str(exp.value)))
@@ -489,13 +504,14 @@ def codegen_ast2ir_exp(ctx: CodegenContext, exp: c_ast.Exp) -> list[IR]:
         else:
             raise Exception('')
     elif isinstance(exp, c_ast.UExp):
-        result.extend(codegen_ast2ir_exp(ctx, exp.exp))
         if exp.op == c_ast.UOp.ADD:
-            pass
+            result.extend(codegen_ast2ir_exp(ctx, exp.exp))
         elif exp.op == c_ast.UOp.SUB:
+            result.extend(codegen_ast2ir_exp(ctx, exp.exp))
             result.append(LI(Register(RegNo.A1), '0'))
             result.append(SUB(Register(RegNo.A0), Register(RegNo.A1), Register(RegNo.A0)))
         elif exp.op == c_ast.UOp.REF:
+            result.extend(codegen_ast2ir_exp(ctx, exp.exp))
             result.extend(codegen_address(ctx, exp.exp))
         elif exp.op == c_ast.UOp.DEREF:# 那么问题就在于 任何情况下deref都应当直接load吗
             result.extend(codegen_ast2ir_exp(ctx, exp.exp))
@@ -503,13 +519,17 @@ def codegen_ast2ir_exp(ctx: CodegenContext, exp: c_ast.Exp) -> list[IR]:
                 pass
             else:
                 result.append(LD(Register(RegNo.A0), '0', Register(RegNo.A0)))
+        elif exp.op == c_ast.UOp.SIZEOF:
+            if exp.exp.type is None:
+                raise Exception('')
+            t = exp.exp.type.length()
+            result.append(LI(Register(RegNo.A0), str(t)))
         else:
             raise Exception('')
     elif isinstance(exp, c_ast.Idt):
-        if isinstance(exp.type, ctype.Ary):
-            result.extend(codegen_address(ctx, exp))
-        else:
-            result.append(LD(Register(RegNo.A0), str(-ctx.query_var(exp.idt.value)), Register(RegNo.FP)))
+        # 我们要解决的问题是 变量的load应当被提出来到一个单独的逻辑中
+        result.extend(codegen_address(ctx, exp))
+        result.extend(codegen_ast2ir_load(exp.type))
     elif isinstance(exp, c_ast.Call):
         # 1.准备参数
         for inarg in exp.inargs:
@@ -527,6 +547,15 @@ def codegen_ast2ir_exp(ctx: CodegenContext, exp: c_ast.Exp) -> list[IR]:
     else:
         raise Exception('')
     return result
+
+def codegen_ast2ir_load(t: ctype.CType) -> list[IR]:
+    if isinstance(t, ctype.I64) or isinstance(t, ctype.I32):
+        return [LD(Register(RegNo.A0), '0', Register(RegNo.A0))]
+    if isinstance(t, ctype.Ptr):
+        return [LD(Register(RegNo.A0), '0', Register(RegNo.A0))]
+    if isinstance(t, ctype.Ary):
+        return []
+    raise Exception('')
 
 def codegen_ast2ir_retcontent(ctx: CodegenContext) -> list[IR]:
     # 返回的操作
@@ -572,6 +601,8 @@ def codegen_ir2asm(irs: List[IR]) -> str:
                 code += f"    call {ir.dest}\n"
             elif isinstance(ir, MV):
                 code += f"    mv {ir.dest.no.name.lower()}, {ir.src.no.name.lower()}\n"
+            elif isinstance(ir, LA):
+                code += f"    la {ir.dest.no.name.lower()}, {ir.label}\n"
             elif isinstance(ir, ADDI):
                 code += f"    addi {ir.dest.no.name.lower()}, {ir.src1.no.name.lower()}, {ir.value}\n"
             elif isinstance(ir, ADD):

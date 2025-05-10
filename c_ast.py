@@ -38,6 +38,7 @@ class UOp(Enum):
     NOT = auto()
     REF = auto()
     DEREF = auto()
+    SIZEOF = auto()
 
 def binop2uop(binop: BinOp) -> UOp:
     if binop == BinOp.ADD:

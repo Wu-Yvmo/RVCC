@@ -1,6 +1,7 @@
 class CType:
     def __init__(self):
         super().__init__()
+        self.glb = False
     
     def length(self) -> int:
         raise Exception('')

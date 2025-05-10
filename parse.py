@@ -45,6 +45,13 @@ def parse(tokens: List[ctoken.CToken]) -> list[c_ast.VarDefsStmt]:
         if not isinstance(vardefs, c_ast.VarDefsStmt):
             raise Exception()
         vardefs_stmts.append(vardefs)
+        if vardefs.is_funcdef():
+            continue
+        # 不是函数定义 将类型额外设置为globl
+        # 这里没有成功修改变量的类型
+        for vardescribe in vardefs.var_describes:
+            ctx.query_var_type(vardescribe.get_name()).glb = True
+            # vardescribe.get_type().glb = True
     ctx.exit_scope()
     return vardefs_stmts
 
@@ -110,7 +117,7 @@ def parse_num(ctx: ParseContext) -> c_ast.Exp:
                 (not isinstance(idx.type, ctype.Ary) and not isinstance(idx.type, ctype.Ptr)):
                 raise Exception(f'index error: {e.type}, {e}, {idx.type}, {idx}')
             # 分别处理 整型[指针/数组] 和 指针/数组[整型] 的情况
-            # 构造常量
+            # 处理 整型[指针/数组] 的情况
             if isinstance(idx.type, ctype.Ary) or isinstance(idx.type, ctype.Ptr):
                 # 构造常量
                 const_num = c_ast.Num(idx.type.base.length())
@@ -123,6 +130,7 @@ def parse_num(ctx: ParseContext) -> c_ast.Exp:
                 e = c_ast.UExp(c_ast.UOp.DEREF, e)
                 add_type(ctx, e)
                 continue
+            # 处理 指针/数组[整型] 的情况
             if not isinstance(e.type, ctype.Ary) and not isinstance(e.type, ctype.Ptr):
                 raise Exception('')
             const_num = c_ast.Num(e.type.base.length())
@@ -135,7 +143,7 @@ def parse_num(ctx: ParseContext) -> c_ast.Exp:
             e = c_ast.UExp(c_ast.UOp.DEREF, e)
             add_type(ctx, e)
             continue
-        # 函数调用
+        # 处理函数调用
         ctx.iter()
         inargs: list[c_ast.Exp] = []
         while ctx.current().token_type != ctoken.CTokenType.PC_R_ROUND_BRACKET:
@@ -148,6 +156,7 @@ def parse_num(ctx: ParseContext) -> c_ast.Exp:
     return e
 
 def parse_uexp(ctx: ParseContext) -> c_ast.Exp:
+    # 另外需要考虑sizeof的情况
     if (ctx.current().token_type == ctoken.CTokenType.OP_ADD or 
         ctx.current().token_type == ctoken.CTokenType.OP_SUB or 
         ctx.current().token_type == ctoken.CTokenType.OP_BITS_AND or 
@@ -155,6 +164,21 @@ def parse_uexp(ctx: ParseContext) -> c_ast.Exp:
         bop = parse_binop(ctx)
         uop = c_ast.binop2uop(bop)
         e = c_ast.UExp(uop, parse_uexp(ctx))
+        add_type(ctx, e)
+        return e
+    if ctx.current().token_type == ctoken.CTokenType.KEY_SIZEOF:
+        ctx.iter()
+        # 括号开头
+        if ctx.current().token_type == ctoken.CTokenType.PC_L_ROUND_BRACKET:
+            ctx.iter()
+            e = parse_exp(ctx)
+            ctx.iter()
+            e = c_ast.UExp(c_ast.UOp.SIZEOF, e)
+            add_type(ctx, e)
+            return e
+        # 表达式开头（不是括号开头）
+        e = parse_uexp(ctx)
+        e = c_ast.UExp(c_ast.UOp.SIZEOF, e)
         add_type(ctx, e)
         return e
     return parse_num(ctx)
@@ -176,7 +200,6 @@ def parse_binexp_add(ctx: ParseContext) -> c_ast.Exp:
         op = parse_binop(ctx)
         l = c_ast.BinExp(l, op, parse_binexp_mul(ctx))
         # 在这里进行指针运算的修正
-        # （暂时还没有做）
         if isinstance(l.l.type, ctype.Ptr) and not isinstance(l.r.type, ctype.Ptr):
             const_len = c_ast.Num(l.l.type.base.length())
             add_type(ctx, const_len)
@@ -537,6 +560,8 @@ def add_type(ctx: ParseContext, exp: c_ast.Exp):
             if not isinstance(exp.exp.type, ctype.Ptr) and not isinstance(exp.exp.type, ctype.Ary):
                 raise Exception(f'{exp.exp} {exp.exp.type}')
             exp.type = exp.exp.type.base
+        elif exp.op == c_ast.UOp.SIZEOF:
+            exp.type = ctype.I64()
         else:
             raise Exception('')
 
