@@ -20,6 +20,20 @@ class I32(CType):
     def length(self) -> int:
         return 4
 
+class I16(CType):
+    def __init__(self):
+        super().__init__()
+
+    def length(self) -> int:
+        return 2
+
+class I8(CType):
+    def __init__(self):
+        super().__init__()
+    
+    def length(self) -> int:
+        return 1
+
 class Ptr(CType):
     def __init__(self, base: CType):
         super().__init__()

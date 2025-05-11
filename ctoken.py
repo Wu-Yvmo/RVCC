@@ -8,8 +8,10 @@ class CTokenType(Enum):
     KEY_WHILE = auto()
     KEY_RETURN = auto()
     KEY_INT = auto()
+    KEY_CHAR = auto()
     IDENTIFIER = auto()
     NUMBER = auto()
+    STRING = auto()
     # 赋值
     OP_ASN = auto()
     OP_EQ = auto()

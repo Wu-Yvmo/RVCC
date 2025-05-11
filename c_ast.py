@@ -63,6 +63,96 @@ class Num(Exp):
         super().__init__()
         self.value = value
 
+class Str(Exp):
+    def __init__(self, value: str):
+        super().__init__()
+        # 这里增加一个转义字符适配的步骤
+        self.value = self.__convert_str(value)
+    
+    def __convert_str(self, value: str) -> str:
+        # 转义字符适配
+        after: str = ''
+        # a b t n v f r e j k l
+        embed_convert: dict[str, str] = {
+            'a': '\a',
+            'b': '\b',
+            't': '\t',
+            'n': '\n',
+            'v': '\v',
+            'f': '\f',
+            'r': '\r',
+            'e': chr(27),
+            'j': chr(106),
+            'k': chr(107),
+            'l': chr(108),
+            '\\': '\\', 
+        }
+        while len(value) > 0:
+            # 不需要转义
+            if value[0] != '\\':
+                after += value[0]
+                value = value[1:]
+                continue
+            # 转义字符
+            value = value[1:]
+            if embed_convert.get(value[0]) is not None:
+                after += embed_convert[value[0]]
+                value = value[1:]
+                continue
+            # 不是16或8进制转义字符 （说明不是转义字符）
+            if value[0] != 'x' and (int(value[0]) > int('7') or int(value[0]) < int('0')):
+                after += value[0]
+                value = value[1:]
+                continue
+            # 8进制 或 16进制 对于8进制 不能长于3位 对于16进制 无限长
+            # 16 进制
+            if value[0] == 'x':
+                # print(f'is hex: {value}')
+                value = value[1:]
+                ctr = 0
+                while len(value) > 0 and self.__is_hexchar(value[0]):
+                    ctr *= 16
+                    ctr += self.__eval_hexchar(value[0])
+                    value = value[1:]
+                after += chr(ctr)
+                continue
+            # 8 进制
+            ctr = 0
+            for _ in range(3):
+                if len(value) == 0:
+                    break
+                if not self.__is_octchar(value[0]):
+                    break
+                ctr *= 8
+                ctr += self.__eval_octchar(value[0])
+                value = value[1:]
+            after += chr(ctr)
+        return after
+    
+    def __is_hexchar(self, c: str) -> bool:
+        v = ord(c)
+        return (v >= ord('0') and v <= ord('9')) or (v >= ord('a') and v <= ord('f')) or (v >= ord('A') and v <= ord('F'))
+    
+    def __eval_hexchar(self, c: str) -> int:
+        v = ord(c)
+        if v >= ord('0') and v <= ord('9'):
+            return v - ord('0')
+        if v >= ord('a') and v <= ord('f'):
+            return v - ord('a') + 10
+        if v >= ord('A') and v <= ord('F'):
+            return v - ord('A') + 10
+        raise Exception('')
+    
+    def __is_octchar(self, c: str) -> bool:
+        v = ord(c)
+        return v >= ord('0') and v <= ord('7')
+    
+    def __eval_octchar(self, c: str) -> int:
+        v = ord(c)
+        if v >= ord('0') and v <= ord('7'):
+            return v - ord('0')
+        raise Exception('')
+
 class Idt(Exp):
     def __init__(self, idt: ctoken.CToken):
         super().__init__()
@@ -75,12 +165,12 @@ class Call(Exp):
         self.func_source = func_source
         self.inargs = inargs
 
-# 下标运算
-class Index(Exp):
-    def __init__(self, source: Exp, index: Exp):
-        super().__init__()
-        self.source = source
-        self.index = index
+# # 下标运算
+# class Index(Exp):
+#     def __init__(self, source: Exp, index: Exp):
+#         super().__init__()
+#         self.source = source
+#         self.index = index
 
 # stmt
 class Stmt:

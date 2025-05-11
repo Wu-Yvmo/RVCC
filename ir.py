@@ -170,8 +170,39 @@ class SD(Instruction):
         self.offset = offset
         self.base = base
 
+class SW(Instruction):
+    def __init__(self, src: Register, offset: str, base: Register):
+        super().__init__()
+        self.src = src
+        self.offset = offset
+        self.base = base
+
+# 存储字节
+class SB(Instruction):
+    def __init__(self, src: Register, offset: str, base: Register):
+        super().__init__()
+        self.src = src
+        self.offset = offset
+        self.base = base
+
 # 加载双字
 class LD(Instruction):
+    def __init__(self, dest: Register, offset: str, base: Register):
+        super().__init__()
+        self.dest = dest
+        self.offset = offset
+        self.base = base
+
+# 加载字
+class LW(Instruction):
+    def __init__(self, dest: Register, offset: str, base: Register):
+        super().__init__()
+        self.dest = dest
+        self.offset = offset
+        self.base = base
+
+# 加载字节
+class LB(Instruction):
     def __init__(self, dest: Register, offset: str, base: Register):
         super().__init__()
         self.dest = dest

@@ -118,9 +118,99 @@ test_items = [
     (r'int x[4]; int main() { x[0]=0; x[1]=1; x[2]=2; x[3]=3; return x[3]; }', 3),
     (r'int x; int main() { return sizeof(x); }', 8),
     (r'int x[4]; int main() { return sizeof(x); }', 32),
+    (r'int main() { char x=1; return x; }', 1),
+    (r'int main() { char x=1; char y=2; return x; }', 1),
+    (r'int main() { char x=1; char y=2; return y; }', 2),
+    (r'int main() { char x; return sizeof(x); }', 1),
+    (r'int main() { char x[10]; return sizeof(x); }', 10),
+    (r'int sub_char(char a, char b, char c) { return a-b-c; } int main() { return sub_char(7, 3, 3); }', 1),
+    (r'int main() { return ""[0]; }', 0),
+    (r'int main() { return sizeof(""); }', 1),
+    (r'int main() { return "abc"[0]; }', 97),
+    (r'int main() { return "abc"[1]; }', 98),
+    (r'int main() { return "abc"[2]; }', 99),
+    (r'int main() { return "abc"[3]; }', 0),
+    (r'int main() { return sizeof("abc"); }', 4),
+    (r'int main() { return "\a"[0]; }', 7),
+    (r'int main() { return "\b"[0]; }', 8),
+    (r'int main() { return "\t"[0]; }', 9),
+    (r'int main() { return "\n"[0]; }', 10),
+    (r'int main() { return "\v"[0]; }', 11),
+    (r'int main() { return "\f"[0]; }', 12),
+    (r'int main() { return "\r"[0]; }', 13),
+    (r'int main() { return "\e"[0]; }', 27),
+    (r'int main() { return "\j"[0]; }', 106),
+    (r'int main() { return "\k"[0]; }', 107),
+    (r'int main() { return "\l"[0]; }', 108),
+    (r'int main() { return "\ax\ny"[0]; }', 7),
+    (r'int main() { return "\ax\ny"[1]; }', 120),
+    (r'int main() { return "\ax\ny"[2]; }', 10),
+    (r'int main() { return "\ax\ny"[3]; }', 121),
+    (r'int main() { return "\0"[0]; }', 0),
+    (r'int main() { return "\20"[0]; }', 16),
+    (r'int main() { return "\101"[0]; }', 65),
+    (r'int main() { return "\1500"[0]; }', 104),
+    (r'int main() { return "\x00"[0]; }', 0),
+    (r'int main() { return "\x77"[0]; }', 119),
+    (r'int main() { return "\xA5"[0]; }', 165),
+    (r'int main() { return "\x00ff"[0]; }', 255),
+    # (r'', -1),
+    # (r'', -1),
 ]
 
 test_items = test_items[::-1]
+
+# [36] 支持转义字符
+# assert 7 'int main() { return "\a"[0]; }'
+# assert 8 'int main() { return "\b"[0]; }'
+# assert 9 'int main() { return "\t"[0]; }'
+# assert 10 'int main() { return "\n"[0]; }'
+# assert 11 'int main() { return "\v"[0]; }'
+# assert 12 'int main() { return "\f"[0]; }'
+# assert 13 'int main() { return "\r"[0]; }'
+# assert 27 'int main() { return "\e"[0]; }'
+
+# assert 106 'int main() { return "\j"[0]; }'
+# assert 107 'int main() { return "\k"[0]; }'
+# assert 108 'int main() { return "\l"[0]; }'
+
+# assert 7 'int main() { return "\ax\ny"[0]; }'
+# assert 120 'int main() { return "\ax\ny"[1]; }'
+# assert 10 'int main() { return "\ax\ny"[2]; }'
+# assert 121 'int main() { return "\ax\ny"[3]; }'
+
+# [37] 支持八进制转义字符
+# assert 0 'int main() { return "\0"[0]; }'
+# assert 16 'int main() { return "\20"[0]; }'
+# assert 65 'int main() { return "\101"[0]; }'
+# assert 104 'int main() { return "\1500"[0]; }'
+
+# [38] 支持十六进制转义字符
+# assert 0 'int main() { return "\x00"[0]; }'
+# assert 119 'int main() { return "\x77"[0]; }'
+# assert 165 'int main() { return "\xA5"[0]; }'
+# assert 255 'int main() { return "\x00ff"[0]; }'
+
+# [34] 支持字符串字面量
+# assert 0 'int main() { return ""[0]; }'
+# assert 1 'int main() { return sizeof(""); }'
+
+# 上面的已经测试过了
+
+# assert 97 'int main() { return "abc"[0]; }'
+# assert 98 'int main() { return "abc"[1]; }'
+# assert 99 'int main() { return "abc"[2]; }'
+# assert 0 'int main() { return "abc"[3]; }'
+# assert 4 'int main() { return sizeof("abc"); }'
+
+# [33] 支持char类型
+# assert 1 'int main() { char x=1; return x; }'
+# assert 1 'int main() { char x=1; char y=2; return x; }'
+# assert 2 'int main() { char x=1; char y=2; return y; }'
+
+# assert 1 'int main() { char x; return sizeof(x); }'
+# assert 10 'int main() { char x[10]; return sizeof(x); }'
+# assert 1 'int main() { return sub_char(7, 3, 3); } int sub_char(char a, char b, char c) { return a-b-c; }'
 
 # [32] 支持全局变量
 # assert 0 'int x; int main() { return x; }'

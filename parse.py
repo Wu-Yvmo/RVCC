@@ -94,6 +94,11 @@ def parse_num(ctx: ParseContext) -> c_ast.Exp:
         ctx.iter()
         e = c_ast.Num(int(t.value))
         add_type(ctx, e)
+    elif ctx.current().token_type == ctoken.CTokenType.STRING:
+        t = ctx.current()
+        ctx.iter()
+        e = c_ast.Str(t.value[1:len(t.value)-1])
+        add_type(ctx, e)
     elif ctx.current().token_type == ctoken.CTokenType.PC_L_ROUND_BRACKET:
         ctx.iter()
         e = parse_exp(ctx)
@@ -275,7 +280,7 @@ def parse_stmt(ctx: ParseContext) -> c_ast.Stmt:
     result: None|c_ast.Stmt = None
     if ctx.current().token_type == ctoken.CTokenType.PC_L_CURLY_BRACKET:
         result = parse_stmt_blk(ctx)
-    elif ctx.current().token_type == ctoken.CTokenType.KEY_INT:
+    elif ctx.current().token_type == ctoken.CTokenType.KEY_INT or ctx.current().token_type == ctoken.CTokenType.KEY_CHAR:
         result = parse_stmt_vardefs(ctx)
     elif ctx.current().token_type == ctoken.CTokenType.KEY_RETURN:
         result = parse_stmt_ret(ctx)
@@ -335,6 +340,9 @@ def parse_type(ctx: ParseContext) -> ctype.CType:
     if ctx.current().token_type == ctoken.CTokenType.KEY_INT:
         ctx.iter()
         return ctype.I64()
+    if ctx.current().token_type == ctoken.CTokenType.KEY_CHAR:
+        ctx.iter()
+        return ctype.I8()
     raise Exception('')
 
 def parse_vardescribe(ctx: ParseContext, t: ctype.CType) -> c_ast.VarDescribe:
@@ -361,12 +369,6 @@ def parse_vardescribe_suffix(ctx: ParseContext, t: ctype.CType) -> c_ast.VarDesc
     ctx.iter()
     normal: c_ast.VarDescribe = c_ast.NormalVarDescribe(name, None)
     normal.t = t
-    # if ctx.current().token_type == ctoken.CTokenType.OP_ASN:
-    #     ctx.iter()
-    #     normal.init = parse_exp(ctx)
-    #     return normal
-    # if ctx.current().token_type == ctoken.CTokenType.PC_SEMICOLON:
-    #     return normal
     if ctx.current().token_type == ctoken.CTokenType.PC_L_ROUND_BRACKET:
         return parse_vardescribe_suffix_func(ctx, normal)
     elif ctx.current().token_type == ctoken.CTokenType.PC_L_SQUARE_BRACKET:
@@ -505,18 +507,15 @@ def parse_stmt_while(ctx: ParseContext) -> c_ast.Stmt:
 def add_type(ctx: ParseContext, exp: c_ast.Exp):
     if isinstance(exp, c_ast.Num):
         exp.type = ctype.I64()
+    elif isinstance(exp, c_ast.Str):
+        exp.type = ctype.Ary(ctype.I8(), len(exp.value) + 1)
     elif isinstance(exp, c_ast.Idt):
         exp.type = ctx.query_var_type(exp.idt.value)
     elif isinstance(exp, c_ast.Call):
         func_type = exp.func_source.type
         if not isinstance(func_type, ctype.Func):
             raise Exception('')
-        exp.type = func_type.ret
-    # 把下标运算转译为a[b] -> *(a + b * offset)
-    elif isinstance(exp, c_ast.Index):
-        if not isinstance(exp.type, ctype.Ary):
-            raise Exception('')
-        exp.type = exp.type.base
+        exp.type = func_type.ret    
     elif isinstance(exp, c_ast.BinExp):
         if exp.op == c_ast.BinOp.ADD:
             if isinstance(exp.l.type, ctype.Ptr) and not isinstance(exp.r.type, ctype.Ptr):
