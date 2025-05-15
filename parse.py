@@ -47,7 +47,11 @@ class ParseContext:
         for frame in self.type_tracker[::-1]:
             if name in frame:
                 return frame[name]
-        raise Exception(f'var {name} has no match')
+        err = ''
+        for frame in self.type_tracker:
+            for k, v in frame.items():
+                err += f'{k}: {v}'
+        raise Exception(f'var {name} has no match, err: {err}')
     
     def register_struct_label(self, name: str, t: c_type.CType):
         self.struct_label_tracker[-1][name] = t
@@ -413,19 +417,21 @@ def parse_stmt_vardefs(ctx: ParseContext, disable_frame_injection: bool = False)
     if ctx.current().token_type == ctoken.CTokenType.PC_SEMICOLON:
         ctx.iter()
         return c_ast.VarDefsStmt(t, [])
-    vardescribes: list[c_ast.VarDescribe] = [parse_vardescribe(ctx, t)]
+    vardescribes: list[c_ast.VarDescribe] = [parse_vardescribe(ctx, t, disable_frame_injection)]
     # 如果我们解析了一个函数定义，那就应当注册函数名到type_tracker中 然后直接返回
     if vardescribes[0].is_funcdef():
         # 把函数名注册为函数变量
         ctx.register_var_type(vardescribes[0].get_name(), vardescribes[0].get_type())
         return c_ast.VarDefsStmt(t, vardescribes)
+    # 常规定义
     while not ctx.end() and ctx.current().token_type != ctoken.CTokenType.PC_SEMICOLON:
         ctx.iter()
-        vardescribes.append(parse_vardescribe(ctx, t))
+        vardescribes.append(parse_vardescribe(ctx, t, disable_frame_injection))
     ctx.iter()
-    if not disable_frame_injection:
-        for vardescribe in vardescribes:
-            ctx.register_var_type(vardescribe.get_name(), vardescribe.get_type())
+    # 这说名我们不能够在这里进行类型注册了
+    # if not disable_frame_injection:
+    #     for vardescribe in vardescribes:
+    #         ctx.register_var_type(vardescribe.get_name(), vardescribe.get_type())
     return c_ast.VarDefsStmt(t, vardescribes)
 
 # 这里的处理会很复杂
@@ -458,11 +464,11 @@ def parse_type(ctx: ParseContext) -> c_type.CType:
                 items.append((vardescribe.get_name(), vardescribe.get_type()))
         ctx.iter()
         # 构造结构体类型
-        cunion_t = c_type.CStruct(label, items)
+        cstruct_t = c_type.CStruct(label, items)
         # 存在一个可感知的名称 将label注册到struct的tracker中
         if label is not None:
-            ctx.register_struct_label(label, cunion_t)
-        return cunion_t
+            ctx.register_struct_label(label, cstruct_t)
+        return cstruct_t
     if ctx.current().token_type == ctoken.CTokenType.KEY_UNION:
         ctx.iter()
         label: None|str = None
@@ -485,21 +491,24 @@ def parse_type(ctx: ParseContext) -> c_type.CType:
                 items.append((vardescribe.get_name(), vardescribe.get_type()))
         ctx.iter()
         # 构造结构体类型
-        cunion_t = c_type.CUnion(label, items)
+        cstruct_t = c_type.CUnion(label, items)
         # 存在一个可感知的名称 将label注册到struct的tracker中
         if label is not None:
-            ctx.register_union_label(label, cunion_t)
-        return cunion_t
+            ctx.register_union_label(label, cstruct_t)
+        return cstruct_t
     if ctx.current().token_type == ctoken.CTokenType.KEY_ENUM:
         pass
     raise Exception(f'{ctx.current().token_type} {ctx.current().token_type}')
 
-def parse_vardescribe(ctx: ParseContext, t: c_type.CType) -> c_ast.VarDescribe:
+def parse_vardescribe(ctx: ParseContext, t: c_type.CType, disable_type_register: bool = False) -> c_ast.VarDescribe:
+    # 这是否意味着应该在这里进行类型注册？
     # 应当把初始化值的初始化提前到那个什么地方中
     vardescribe = parse_vardescribe_prefix(ctx, t)
     if not ctx.end() and ctx.current().token_type == ctoken.CTokenType.OP_ASN:
         ctx.iter()
         vardescribe.init = parse_exp_disable_comma(ctx)
+    if not disable_type_register:
+        ctx.register_var_type(vardescribe.get_name(), vardescribe.get_type())
     return vardescribe
 
 def parse_vardescribe_prefix(ctx: ParseContext, t: c_type.CType) -> c_ast.VarDescribe:

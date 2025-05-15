@@ -737,6 +737,8 @@ def codegen_ast2ir_exp(ctx: CodegenContext, exp: c_ast.Exp) -> list[IR]:
     return result
 
 def codegen_ast2ir_load(t: c_type.CType) -> list[IR]:
+    if isinstance(t, c_type.CStruct) or isinstance(t, c_type.CUnion):
+        return []
     if isinstance(t, c_type.Ptr):
         return [LD(Register(RegNo.A0), '0', Register(RegNo.A0))]
     if isinstance(t, c_type.Ary):
@@ -751,6 +753,16 @@ def codegen_ast2ir_load(t: c_type.CType) -> list[IR]:
 
 # 默认要存储的值在a0中 而地址在a1中
 def codegen_ast2ir_store(t: c_type.CType) -> list[IR]:
+    if isinstance(t, c_type.CStruct) or isinstance(t, c_type.CUnion):
+        irs: list[IR] = []
+        for i in range(t.length()):
+            irs.append(LI(Register(RegNo.T0), str(i)))
+            irs.append(ADD(Register(RegNo.T0), Register(RegNo.A0), Register(RegNo.T0)))
+            irs.append(LB(Register(RegNo.T1), '0', Register(RegNo.T0)))
+            irs.append(LI(Register(RegNo.T0), str(i)))
+            irs.append(ADD(Register(RegNo.T0), Register(RegNo.A1), Register(RegNo.T0)))
+            irs.append(SB(Register(RegNo.T1), '0', Register(RegNo.T0)))
+        return irs
     if t.length() == 8:
         return [SD(Register(RegNo.A0), '0', Register(RegNo.A1))]
     if t.length() == 4:

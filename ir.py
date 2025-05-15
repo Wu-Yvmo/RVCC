@@ -8,6 +8,8 @@ class RegNo(enum.IntEnum):
     A4 = enum.auto()
     A5 = enum.auto()
     A6 = enum.auto()
+    T0 = enum.auto()
+    T1 = enum.auto()
     RA = enum.auto()
     FP = enum.auto()
     SP = enum.auto()
