@@ -20,7 +20,7 @@ class Void(CType):
         raise Exception('')
     
     def align(self) -> int:
-        raise Exception('')
+        raise Exception('void do not say')
 
 class I64(CType):
     def __init__(self):
@@ -98,7 +98,7 @@ class CStruct(CType):
         self.label = label
         # 要编地址
         self.len = 0
-        self.aln = 0
+        self.aln = 1
         self.items: dict[str, tuple[CType, int]] = {}
         for item in items:
             # 将当前偏移量对齐到本元素的偏移量
@@ -129,6 +129,26 @@ class CUnion(CType):
         super().__init__()
         self.label = label
         self.items = items
+        self.len = 0
+        self.aln = 1
+        # CUnion的大小应当是所有成员中最大的那个
+        for item in items:
+            if self.len < item[1].length():
+                self.len = item[1].length()
+            if self.aln < item[1].align():
+                self.len = item[1].align()
+    
+    def length(self):
+        return self.len
+    
+    def subtype(self, key: str) -> CType:
+        for item in self.items:
+            if key == item[0]:
+                return item[1]
+        raise Exception('')
+
+    def align(self) -> int:
+        return self.aln
 
 class CEnum(CType):
     def __init__(self, label: None|str, items: list[tuple[str, int]]):

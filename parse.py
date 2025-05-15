@@ -57,6 +57,15 @@ class ParseContext:
             if name in frame:
                 return frame[name]
         raise Exception(f'struct {name} has no match')
+    
+    def register_union_label(self, name: str, t: c_type.CType):
+        self.union_label_tracker[-1][name] = t
+    
+    def query_union_type(self, name: str) -> c_type.CType:
+        for frame in self.union_label_tracker[::-1]:
+            if name in frame:
+                return frame[name]
+        raise Exception(f'union {name} has no match')
 
 def parse(raw_tokens: list[ctoken.CToken]) -> list[c_ast.VarDefsStmt]:
     tokens: list[ctoken.CToken] = []
@@ -287,9 +296,9 @@ def parse_binexp_add(ctx: ParseContext) -> c_ast.Exp:
             if not l.op == c_ast.BinOp.SUB:
                 raise Exception(f'pointer calc error: {l.op}')
             add_type(ctx, l)
-            literal_8 = c_ast.Num(8)
-            add_type(ctx, literal_8)
-            l = c_ast.BinExp(l, c_ast.BinOp.DIV, literal_8)
+            const_len = c_ast.Num(l.l.type.base.length())
+            add_type(ctx, const_len)
+            l = c_ast.BinExp(l, c_ast.BinOp.DIV, const_len)
         elif isinstance(l.l.type, c_type.Ary) and not isinstance(l.r.type, c_type.Ary):
             const_len = c_ast.Num(l.l.type.base.length())
             add_type(ctx, const_len)
@@ -449,13 +458,38 @@ def parse_type(ctx: ParseContext) -> c_type.CType:
                 items.append((vardescribe.get_name(), vardescribe.get_type()))
         ctx.iter()
         # 构造结构体类型
-        cstruct_t = c_type.CStruct(label, items)
+        cunion_t = c_type.CStruct(label, items)
         # 存在一个可感知的名称 将label注册到struct的tracker中
         if label is not None:
-            ctx.register_struct_label(label, cstruct_t)
-        return cstruct_t
+            ctx.register_struct_label(label, cunion_t)
+        return cunion_t
     if ctx.current().token_type == ctoken.CTokenType.KEY_UNION:
-        pass
+        ctx.iter()
+        label: None|str = None
+        if ctx.current().token_type == ctoken.CTokenType.IDENTIFIER:
+            label = ctx.current().value
+            ctx.iter()
+        items: list[tuple[str, c_type.CType]] = []
+        # 说明我们是要使用已有的struct 而不是构造新的struct
+        if ctx.current().token_type != ctoken.CTokenType.PC_L_CURLY_BRACKET:
+            if label is None:
+                raise Exception('')
+            return ctx.query_union_type(label)
+        ctx.iter()
+        # 这里的逻辑有问题 我们不知道是要构造新的struct还是使用老的struct
+        while ctx.current().token_type != ctoken.CTokenType.PC_R_CURLY_BRACKET:
+            vardefsstmt = parse_stmt_vardefs(ctx, disable_frame_injection=True)
+            if not isinstance(vardefsstmt, c_ast.VarDefsStmt):
+                raise Exception('')
+            for vardescribe in vardefsstmt.var_describes:
+                items.append((vardescribe.get_name(), vardescribe.get_type()))
+        ctx.iter()
+        # 构造结构体类型
+        cunion_t = c_type.CUnion(label, items)
+        # 存在一个可感知的名称 将label注册到struct的tracker中
+        if label is not None:
+            ctx.register_union_label(label, cunion_t)
+        return cunion_t
     if ctx.current().token_type == ctoken.CTokenType.KEY_ENUM:
         pass
     raise Exception(f'{ctx.current().token_type} {ctx.current().token_type}')
@@ -682,7 +716,9 @@ def add_type(ctx: ParseContext, exp: c_ast.Exp):
             if isinstance(exp.l.type, c_type.CStruct):
                 exp.type = exp.l.type.subtype(exp.r.idt.value)
             elif isinstance(exp.l.type, c_type.CUnion):
-                raise Exception('not implement yet')
+                exp.type = exp.l.type.subtype(exp.r.idt.value)
+            else:
+                raise Exception('')
         else:
             raise Exception(f'unknown operator: {exp.op}')
     elif isinstance(exp, c_ast.UExp):

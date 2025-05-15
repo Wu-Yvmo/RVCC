@@ -8,7 +8,8 @@ test_items: list[str] = [
     'pointer',
     'string',
     'variables',
-    'struct'
+    'struct',
+    'union'
 ]
 
 test_items = test_items[::-1]

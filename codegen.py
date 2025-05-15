@@ -3,6 +3,7 @@ import c_type
 from ir import *
 from typing import * # type: ignore
 
+import utils
 import varinfo # type: ignore
 
 # 我们讨论一下怎么生成return语句
@@ -109,12 +110,13 @@ class CodegenContext:
         raise Exception('')
 
     def __init_frame_length_blkstmt(self, blkstmt: c_ast.BlkStmt):
-        # 现在的主要问题在变量编址上 数组
         # 按照测试用例的要求，变量在栈上的存储方式是类似数组的
+        # 什么情况？你差不多得了奥
         for varinfo in blkstmt.varinfos[::-1]:
             if varinfo.t is None:
                 raise Exception('')
             self.frame_length += varinfo.t.length()
+            self.frame_length = utils.align2(self.frame_length, varinfo.t.align())
             varinfo.offset = self.frame_length
         # 累加所有子blk
         for stmt in blkstmt.stmts:
@@ -137,6 +139,7 @@ class CodegenContext:
             elif isinstance(stmt, c_ast.ExpStmt):
                 # 表达式也要进行变量扫描
                 self.__init_frame_length_exp(stmt.exp)
+        self.frame_length = utils.align2(self.frame_length, 16)
     
     def __init_frame_length_exp(self, exp: c_ast.Exp):
         if isinstance(exp, c_ast.BinExp):
@@ -594,9 +597,12 @@ def codegen_address(ctx: CodegenContext, to_address: str|c_ast.Exp) -> list[IR]:
         irs.extend(codegen_address(ctx, to_address.l))
         if not isinstance(to_address.r, c_ast.Idt):
             raise Exception('')
+        # 是union就不需要求偏移地址了
+        if isinstance(to_address.l.type, c_type.CUnion):
+            return irs
         if not isinstance(to_address.l.type, c_type.CStruct):
             raise Exception('')
-        # 加 成员的 偏移量
+        # 加 上 成员的 偏移量
         irs.append(ADDI(Register(RegNo.A0), Register(RegNo.A0), str(to_address.l.type.offset(to_address.r.idt.value))))
         return irs
     raise Exception(f'can not be addressed: {to_address}')
@@ -631,7 +637,11 @@ def codegen_ast2ir_exp(ctx: CodegenContext, exp: c_ast.Exp) -> list[IR]:
                 raise Exception('')
             result.extend(codegen_ast2ir_store(exp.l.type))
             return result
-        if exp.op == c_ast.BinOp.ACS:
+        if exp.op == c_ast.BinOp.ACS and isinstance(exp.l.type, c_type.CStruct):
+            result.extend(codegen_address(ctx, exp))
+            result.extend(codegen_ast2ir_load(exp.type))
+            return result
+        if exp.op == c_ast.BinOp.ACS and isinstance(exp.l.type, c_type.CUnion):
             result.extend(codegen_address(ctx, exp))
             result.extend(codegen_ast2ir_load(exp.type))
             return result
