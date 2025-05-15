@@ -1,5 +1,5 @@
 import c_ast
-import ctype
+import c_type
 from ir import *
 from typing import * # type: ignore
 
@@ -131,6 +131,27 @@ class CodegenContext:
             elif isinstance(stmt, c_ast.WhileStmt):
                 if isinstance(stmt.body, c_ast.BlkStmt):
                     self.__init_frame_length_blkstmt(stmt.body)
+            elif isinstance(stmt, c_ast.RetStmt):
+                if stmt.value is not None:
+                    self.__init_frame_length_exp(stmt.value)
+            elif isinstance(stmt, c_ast.ExpStmt):
+                # 表达式也要进行变量扫描
+                self.__init_frame_length_exp(stmt.exp)
+    
+    def __init_frame_length_exp(self, exp: c_ast.Exp):
+        if isinstance(exp, c_ast.BinExp):
+            self.__init_frame_length_exp(exp.l)
+            self.__init_frame_length_exp(exp.r)
+        elif isinstance(exp, c_ast.UExp):
+            self.__init_frame_length_exp(exp.exp)
+        elif isinstance(exp, c_ast.BlkExp):
+            if not isinstance(exp.stmt, c_ast.BlkStmt):
+                raise Exception('')
+            self.__init_frame_length_blkstmt(exp.stmt)
+        elif isinstance(exp, c_ast.Call):
+            self.__init_frame_length_exp(exp.func_source)
+            for arg in exp.inargs:
+                self.__init_frame_length_exp(arg)
     
     def enter_scope(self, blkstmt: c_ast.BlkStmt):
         self.frame_tracker.append(blkstmt.varinfos)
@@ -381,6 +402,10 @@ def codegen_ast2ir_data_emit_str_exp(ctx: CodegenContext, exp: c_ast.Exp) -> lis
         for inarg in exp.inargs:
             irs.extend(codegen_ast2ir_data_emit_str_exp(ctx, inarg))
         return irs
+    if isinstance(exp, c_ast.BlkExp):
+        irs: list[IR] = []
+        irs.extend(codegen_ast2ir_data_emit_str_stmt(ctx, exp.stmt))
+        return irs
     raise Exception('shouldn not run')
 
 # 生成全局变量
@@ -556,17 +581,41 @@ def codegen_address(ctx: CodegenContext, to_address: str|c_ast.Exp) -> list[IR]:
         # 对子表达式求值
         irs.extend(codegen_ast2ir_exp(ctx, to_address.exp))
         return irs
+    if isinstance(to_address, c_ast.BinExp) and to_address.op == c_ast.BinOp.COMMA:
+        irs: List[IR] = []
+        # 我们一般认为只有执行.l的表达式后才可能形成.r的正确地址
+        irs.extend(codegen_ast2ir_exp(ctx, to_address.l))
+        # 生成右子表达式的地址
+        irs.extend(codegen_address(ctx, to_address.r))
+        return irs
+    if isinstance(to_address, c_ast.BinExp) and to_address.op == c_ast.BinOp.ACS:
+        irs: List[IR] = []
+        # 1.生成左子表达式的地址
+        irs.extend(codegen_address(ctx, to_address.l))
+        if not isinstance(to_address.r, c_ast.Idt):
+            raise Exception('')
+        if not isinstance(to_address.l.type, c_type.CStruct):
+            raise Exception('')
+        # 加 成员的 偏移量
+        irs.append(ADDI(Register(RegNo.A0), Register(RegNo.A0), str(to_address.l.type.offset(to_address.r.idt.value))))
+        return irs
     raise Exception(f'can not be addressed: {to_address}')
 
 def codegen_ast2ir_exp(ctx: CodegenContext, exp: c_ast.Exp) -> list[IR]:
     if exp.type is None:
-        raise Exception('')
+        raise Exception(f'')
     result: list[IR] = []
     if isinstance(exp, c_ast.Num):
         result.append(LI(Register(RegNo.A0), str(exp.value)))
         return result
+    elif isinstance(exp, c_ast.BlkExp):
+        # 执行整个stmt
+        # 为什么在expstmt内部使用变量会有问题？
+        result.extend(codegen_ast2ir_stmt(ctx, exp.stmt))
+        return result
     elif isinstance(exp, c_ast.BinExp):
         # 赋值表达式单独进行处理
+        # 问题在于 对子表达式进行了求地址 但是没有进行求值 这个问题如何解决？
         if exp.op == c_ast.BinOp.ASN:
             # 任何有左地址的都可以进行赋值运算
             # 1.生成左子表达式的地址
@@ -582,17 +631,20 @@ def codegen_ast2ir_exp(ctx: CodegenContext, exp: c_ast.Exp) -> list[IR]:
                 raise Exception('')
             result.extend(codegen_ast2ir_store(exp.l.type))
             return result
+        if exp.op == c_ast.BinOp.ACS:
+            result.extend(codegen_address(ctx, exp))
+            result.extend(codegen_ast2ir_load(exp.type))
+            return result
         # 1.生成右子表达式
         result.extend(codegen_ast2ir_exp(ctx, exp.r))
         # 2.入栈a0
-        result.append(ADDI(Register(RegNo.SP), Register(RegNo.SP), '-8'))
-        result.append(SD(Register(RegNo.A0), '0', Register(RegNo.SP)))
+        result.extend(codegen_ast2ir_reg_push(Register(RegNo.A0)))
         # 2.生成左子表达式
         result.extend(codegen_ast2ir_exp(ctx, exp.l))
         # 出栈到a1
-        result.append(LD(Register(RegNo.A1), '0', Register(RegNo.SP)))
-        result.append(ADDI(Register(RegNo.SP), Register(RegNo.SP), '8'))
+        result.extend(codegen_ast2ir_reg_pop(Register(RegNo.A1)))
         # 运算
+        # 我们面临的困境是 前面执行了生成左子表达式和右子表达式的逻辑 但不应该是这样的
         if exp.op == c_ast.BinOp.ADD:
             result.append(ADD(Register(RegNo.A0), Register(RegNo.A0), Register(RegNo.A1)))
         elif exp.op == c_ast.BinOp.SUB:
@@ -621,6 +673,9 @@ def codegen_ast2ir_exp(ctx: CodegenContext, exp: c_ast.Exp) -> list[IR]:
             # a1 > a0
             result.append(SLT(Register(RegNo.A0), Register(RegNo.A0), Register(RegNo.A1)))
             result.append(XORI(Register(RegNo.A0), Register(RegNo.A0), '1'))
+        elif exp.op == c_ast.BinOp.COMMA:
+            # 因为执行后的结果是 左子表达式在a0 右子表达式在a1 所以执行一个MV指令
+            result.append(MV(Register(RegNo.A0), Register(RegNo.A1)))
         else:
             raise Exception('')
     elif isinstance(exp, c_ast.UExp):
@@ -635,10 +690,10 @@ def codegen_ast2ir_exp(ctx: CodegenContext, exp: c_ast.Exp) -> list[IR]:
             result.extend(codegen_address(ctx, exp.exp))
         elif exp.op == c_ast.UOp.DEREF:# 那么问题就在于 任何情况下deref都应当直接load吗
             result.extend(codegen_ast2ir_exp(ctx, exp.exp))
-            if isinstance(exp.type, ctype.Ary):
+            if isinstance(exp.type, c_type.Ary):
                 pass
             else:
-                result.append(LD(Register(RegNo.A0), '0', Register(RegNo.A0)))
+                result.extend(codegen_ast2ir_load(exp.type))
         elif exp.op == c_ast.UOp.SIZEOF:
             if exp.exp.type is None:
                 raise Exception('')
@@ -671,10 +726,10 @@ def codegen_ast2ir_exp(ctx: CodegenContext, exp: c_ast.Exp) -> list[IR]:
         raise Exception('')
     return result
 
-def codegen_ast2ir_load(t: ctype.CType) -> list[IR]:
-    if isinstance(t, ctype.Ptr):
+def codegen_ast2ir_load(t: c_type.CType) -> list[IR]:
+    if isinstance(t, c_type.Ptr):
         return [LD(Register(RegNo.A0), '0', Register(RegNo.A0))]
-    if isinstance(t, ctype.Ary):
+    if isinstance(t, c_type.Ary):
         return []
     if t.length() == 8:
         return [LD(Register(RegNo.A0), '0', Register(RegNo.A0))]
@@ -685,7 +740,7 @@ def codegen_ast2ir_load(t: ctype.CType) -> list[IR]:
     raise Exception('')
 
 # 默认要存储的值在a0中 而地址在a1中
-def codegen_ast2ir_store(t: ctype.CType) -> list[IR]:
+def codegen_ast2ir_store(t: c_type.CType) -> list[IR]:
     if t.length() == 8:
         return [SD(Register(RegNo.A0), '0', Register(RegNo.A1))]
     if t.length() == 4:

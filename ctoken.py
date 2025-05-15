@@ -1,6 +1,10 @@
 from enum import Enum, auto
 
 class CTokenType(Enum):
+    KEY_STRUCT = auto()
+    KEY_UNION = auto()
+    KEY_ENUM = auto()
+    KEY_TYPEDEF = auto()
     KEY_SIZEOF = auto()
     KEY_IF = auto()
     KEY_ELSE = auto()
@@ -25,6 +29,7 @@ class CTokenType(Enum):
     OP_MUL = auto()
     OP_DIV = auto()
     OP_BITS_AND = auto()
+    OP_R_ARROW = auto()
     # 括号
     PC_L_ROUND_BRACKET = auto()
     PC_R_ROUND_BRACKET = auto()
@@ -38,6 +43,12 @@ class CTokenType(Enum):
     PC_COMMA = auto()
     # 冒号
     PC_COLON = auto()
+    # 点号
+    PC_POINT = auto()
+    # 单行注释
+    COMMENT_SINGLE_LINE = auto()
+    # 多行注释
+    COMMENT_MULTI_LINE = auto()
 
 class CToken:
     def __init__(self, token_type: CTokenType, value: str):

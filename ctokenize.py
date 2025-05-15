@@ -3,7 +3,10 @@ import ctoken
 import re
 import sys
 
-patterns = [(r'^sizeof', ctoken.CTokenType.KEY_SIZEOF),
+patterns = [(r'^struct', ctoken.CTokenType.KEY_STRUCT),
+            (r'^union', ctoken.CTokenType.KEY_UNION),
+            (r'^enum', ctoken.CTokenType.KEY_ENUM),
+            (r'^sizeof', ctoken.CTokenType.KEY_SIZEOF),
             (r'^if', ctoken.CTokenType.KEY_IF),
             (r'^else', ctoken.CTokenType.KEY_ELSE),
             (r'^for', ctoken.CTokenType.KEY_FOR),
@@ -13,7 +16,7 @@ patterns = [(r'^sizeof', ctoken.CTokenType.KEY_SIZEOF),
             (r'^char*', ctoken.CTokenType.KEY_CHAR),
             (r'^[a-zA-Z_]+[0-9]*', ctoken.CTokenType.IDENTIFIER),
             (r'^[0-9]+', ctoken.CTokenType.NUMBER),
-            (r'^\".*\"', ctoken.CTokenType.STRING),
+            # (r'^"((\\\\)|(\\\")|([^\"\\s]))*"', ctoken.CTokenType.STRING), 不用
             (r'^==', ctoken.CTokenType.OP_EQ),
             (r'^!=', ctoken.CTokenType.OP_NE),
             (r'^<=', ctoken.CTokenType.OP_LE),
@@ -21,6 +24,7 @@ patterns = [(r'^sizeof', ctoken.CTokenType.KEY_SIZEOF),
             (r'^>=', ctoken.CTokenType.OP_GE),
             (r'^>', ctoken.CTokenType.OP_GT),
             (r'^=', ctoken.CTokenType.OP_ASN),
+            (r'^->', ctoken.CTokenType.OP_R_ARROW),
             (r'^\*', ctoken.CTokenType.OP_MUL),
             (r'^\/', ctoken.CTokenType.OP_DIV),
             (r'^\+', ctoken.CTokenType.OP_ADD),
@@ -35,10 +39,13 @@ patterns = [(r'^sizeof', ctoken.CTokenType.KEY_SIZEOF),
             (r'^;', ctoken.CTokenType.PC_SEMICOLON),
             (r'^,', ctoken.CTokenType.PC_COMMA),
             (r'^:', ctoken.CTokenType.PC_COLON),
+            (r'^\.', ctoken.CTokenType.PC_POINT),
+            (r'^//.*', ctoken.CTokenType.COMMENT_SINGLE_LINE),
+            (r'^/\*[\s\S]*\*/', ctoken.CTokenType.COMMENT_MULTI_LINE),
 ]
 
 def ltrim(code: str) -> str:
-    while len(code) > 0 and code[0] == ' ':
+    while len(code) > 0 and code[0].isspace():
         code = code[1:]
     return code
 
@@ -59,6 +66,24 @@ def tokenize(code: str) -> list[ctoken.CToken]:
     tokens: list[ctoken.CToken] = []
     code = ltrim(code)
     while len(code) > 0:
+        # 当前为"时选择手动tokenize
+        if code[0] == '"':
+            content = '"'
+            code = code[1:]
+            # tokenize主逻辑
+            while code[0] != '"':
+                if code[0] == '\\':
+                    content += code[0]
+                    content += code[1]
+                    code = code[2:]
+                    continue
+                content += code[0]
+                code = code[1:]
+            content += '"'
+            tokens.append(ctoken.CToken(ctoken.CTokenType.STRING, content))
+            code = code[1:]
+            code = ltrim(code)
+            continue
         # 候选，一次轮训扫描会产生多个候选token
         candidates: list[ctoken.CToken] = []
         for pattern in patterns:
@@ -68,7 +93,7 @@ def tokenize(code: str) -> list[ctoken.CToken]:
         # 取最长的候选
         candidates.sort(key=lambda x: len(x.value), reverse=True)
         if len(candidates) == 0:
-            raise Exception('')
+            raise Exception(f'no match, {code}')
         tokens.append(candidates[0])
         code = code[len(candidates[0].value):]
         code = ltrim(code)

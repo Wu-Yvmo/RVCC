@@ -1,4 +1,4 @@
-import ctype
+import c_type
 
 
 class VarInfo:
@@ -6,4 +6,4 @@ class VarInfo:
         super().__init__()
         self.name = name
         self.offset = -1
-        self.t: ctype.CType|None = None
+        self.t: c_type.CType|None = None

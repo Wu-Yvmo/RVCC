@@ -1,15 +1,17 @@
+from dataclasses import dataclass
 from typing import * # type: ignore
 from enum import Enum, auto
 
-import ctype
+import c_type
 from ir import RegNo
 import varinfo
 import ctoken
 
+@dataclass
 class Exp:
     def __init__(self):
         super().__init__()
-        self.type: ctype.CType|None = None
+        self.type: c_type.CType|None = None
 
 class BinOp(Enum):
     ADD = auto()
@@ -24,7 +26,11 @@ class BinOp(Enum):
     GE = auto()
     ASN = auto()
     BITS_AND = auto()
+    COMMA = auto()
+    # access，访问
+    ACS = auto()
 
+@dataclass
 class BinExp(Exp):
     def __init__(self, l: Exp, op: BinOp, r: Exp):
         super().__init__()
@@ -100,7 +106,7 @@ class Str(Exp):
                 value = value[1:]
                 continue
             # 不是16或8进制转义字符 （说明不是转义字符）
-            if value[0] != 'x' and (int(value[0]) > int('7') or int(value[0]) < int('0')):
+            if value[0] != 'x' and (ord(value[0]) > ord('7') or ord(value[0]) < ord('0')):
                 after += value[0]
                 value = value[1:]
                 continue
@@ -165,6 +171,15 @@ class Call(Exp):
         self.func_source = func_source
         self.inargs = inargs
 
+class Stmt:
+    def __init__(self):
+        super().__init__()
+
+class BlkExp(Exp):
+    def __init__(self, stmt: Stmt):
+        super().__init__()
+        self.stmt = stmt
+
 # # 下标运算
 # class Index(Exp):
 #     def __init__(self, source: Exp, index: Exp):
@@ -173,9 +188,6 @@ class Call(Exp):
 #         self.index = index
 
 # stmt
-class Stmt:
-    def __init__(self):
-        super().__init__()
 
 class ExpStmt(Stmt):
     def __init__(self, exp: Exp):
@@ -191,10 +203,10 @@ class BlkStmt(Stmt):
 class VarDescribe:
     def __init__(self):
         super().__init__()
-        self.t: ctype.CType|None = None
+        self.t: c_type.CType|None = None
         self.init: Exp|None = None
     
-    def get_type(self) -> ctype.CType:
+    def get_type(self) -> c_type.CType:
         raise Exception('')
     
     def get_name(self) -> str:
@@ -204,7 +216,7 @@ class VarDescribe:
         raise Exception('')
 
 class VarDefsStmt(Stmt):
-    def __init__(self, btype: ctype.CType, var_describes: list[VarDescribe]):
+    def __init__(self, btype: c_type.CType, var_describes: list[VarDescribe]):
         '''
         var_defs:
             1. 变量定义
@@ -223,9 +235,9 @@ class NormalVarDescribe(VarDescribe):
         super().__init__()
         self.name = name
         self.init = init
-        self.t: ctype.CType|None = None
+        self.t: c_type.CType|None = None
     
-    def get_type(self) -> ctype.CType:
+    def get_type(self) -> c_type.CType:
         if self.t is None:
             raise Exception('')
         return self.t
@@ -242,9 +254,9 @@ class FuncVarDescribe(VarDescribe):
         self.vardescribe = vardescribe
         self.params = params
         self.body = body
-        self.t: ctype.CType|None = None
+        self.t: c_type.CType|None = None
     
-    def get_type(self) -> ctype.CType:
+    def get_type(self) -> c_type.CType:
         if self.t is None:
             raise Exception('')
         return self.t
@@ -260,9 +272,9 @@ class AryVarDescribe(VarDescribe):
         super().__init__()
         self.vardescribe = vardescribe
         self.length = length
-        self.t: ctype.CType|None = None
+        self.t: c_type.CType|None = None
     
-    def get_type(self) -> ctype.CType:
+    def get_type(self) -> c_type.CType:
         if self.t is None:
             raise Exception('')
         return self.t
