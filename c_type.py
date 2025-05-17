@@ -136,7 +136,9 @@ class CUnion(CType):
             if self.len < item[1].length():
                 self.len = item[1].length()
             if self.aln < item[1].align():
-                self.len = item[1].align()
+                self.aln = item[1].align()
+        # 对齐自身大小
+        self.len = utils.align2(self.len, self.aln)
     
     def length(self):
         return self.len

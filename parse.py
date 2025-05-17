@@ -368,11 +368,14 @@ def parse_stmt(ctx: ParseContext) -> c_ast.Stmt:
     result: None|c_ast.Stmt = None
     if ctx.current().token_type == ctoken.CTokenType.PC_L_CURLY_BRACKET:
         result = parse_stmt_blk(ctx)
-    elif ctx.current().token_type == ctoken.CTokenType.KEY_INT or \
+    elif ctx.current().token_type == ctoken.CTokenType.KEY_LONG or \
+        ctx.current().token_type == ctoken.CTokenType.KEY_INT or \
+        ctx.current().token_type == ctoken.CTokenType.KEY_SHORT or \
         ctx.current().token_type == ctoken.CTokenType.KEY_CHAR or \
         ctx.current().token_type == ctoken.CTokenType.KEY_STRUCT or \
         ctx.current().token_type == ctoken.CTokenType.KEY_UNION or \
-        ctx.current().token_type == ctoken.CTokenType.KEY_ENUM:
+        ctx.current().token_type == ctoken.CTokenType.KEY_ENUM or \
+        ctx.current().token_type == ctoken.CTokenType.KEY_VOID:
         result = parse_stmt_vardefs(ctx)
     elif ctx.current().token_type == ctoken.CTokenType.KEY_RETURN:
         result = parse_stmt_ret(ctx)
@@ -437,12 +440,21 @@ def parse_stmt_vardefs(ctx: ParseContext, disable_frame_injection: bool = False)
 
 # 这里的处理会很复杂
 def parse_type(ctx: ParseContext) -> c_type.CType:
-    if ctx.current().token_type == ctoken.CTokenType.KEY_INT:
+    if ctx.current().token_type == ctoken.CTokenType.KEY_LONG:
         ctx.iter()
         return c_type.I64()
+    if ctx.current().token_type == ctoken.CTokenType.KEY_INT:
+        ctx.iter()
+        return c_type.I32()
+    if ctx.current().token_type == ctoken.CTokenType.KEY_SHORT:
+        ctx.iter()
+        return c_type.I16()
     if ctx.current().token_type == ctoken.CTokenType.KEY_CHAR:
         ctx.iter()
         return c_type.I8()
+    if ctx.current().token_type == ctoken.CTokenType.KEY_VOID:
+        ctx.iter()
+        return c_type.Void()
     if ctx.current().token_type == ctoken.CTokenType.KEY_STRUCT:
         ctx.iter()
         label: None|str = None
@@ -674,7 +686,7 @@ def parse_stmt_while(ctx: ParseContext) -> c_ast.Stmt:
 # 下面的代码我完全没有审阅 重新观察 等待修改
 def add_type(ctx: ParseContext, exp: c_ast.Exp):
     if isinstance(exp, c_ast.Num):
-        exp.type = c_type.I64()
+        exp.type = c_type.I32()
     elif isinstance(exp, c_ast.Str):
         exp.type = c_type.Ary(c_type.I8(), len(exp.value) + 1)
     elif isinstance(exp, c_ast.BlkExp):
@@ -697,29 +709,33 @@ def add_type(ctx: ParseContext, exp: c_ast.Exp):
             raise Exception(f'{exp} {exp.func_source}')
         exp.type = func_type.ret
     elif isinstance(exp, c_ast.BinExp):
-        # 其中一个问题是：ary在进行加法操作后的类型到底是什么？是元素本身 还是底层的那个玩意
+        # 加法
         if exp.op == c_ast.BinOp.ADD:
+            # 指针 + 非指针
             if isinstance(exp.l.type, c_type.Ptr) and not isinstance(exp.r.type, c_type.Ptr):
                 exp.type = exp.l.type
+            # 非指针 + 指针
             elif not isinstance(exp.l.type, c_type.Ptr) and isinstance(exp.r.type, c_type.Ptr):
                 exp.type = exp.r.type
+            # 数组 + 非数组
             elif isinstance(exp.l.type, c_type.Ary) and not isinstance(exp.r.type, c_type.Ary):
                 exp.type = c_type.Ptr(exp.l.type.base)
+            # 非数组 + 数组
             elif not isinstance(exp.l.type, c_type.Ary) and isinstance(exp.r.type, c_type.Ary):
                 exp.type = c_type.Ptr(exp.r.type.base)
             else:
-                exp.type = c_type.I64()
+                exp.type = exp.l.type
         elif exp.op == c_ast.BinOp.SUB:
             if isinstance(exp.l.type, c_type.Ptr) and not isinstance(exp.r.type, c_type.Ptr):
                 exp.type = exp.l.type
             elif isinstance(exp.l.type, c_type.Ptr) and isinstance(exp.r.type, c_type.Ptr):
                 exp.type = c_type.I64()
             else:
-                exp.type = c_type.I64()
+                exp.type = exp.l.type
         elif exp.op == c_ast.BinOp.MUL:
-            exp.type = c_type.I64()
+            exp.type = exp.l.type
         elif exp.op == c_ast.BinOp.DIV:
-            exp.type = c_type.I64()
+            exp.type = exp.l.type
         elif (exp.op == c_ast.BinOp.EQ or exp.op == c_ast.BinOp.NE or exp.op == c_ast.BinOp.LT or 
               exp.op == c_ast.BinOp.LE or exp.op == c_ast.BinOp.GT or exp.op == c_ast.BinOp.GE):
             exp.type = c_type.I64()
@@ -752,7 +768,7 @@ def add_type(ctx: ParseContext, exp: c_ast.Exp):
                 raise Exception(f'{exp.exp} {exp.exp.type}')
             exp.type = exp.exp.type.base
         elif exp.op == c_ast.UOp.SIZEOF:
-            exp.type = c_type.I64()
+            exp.type = c_type.I32()
         else:
             raise Exception('')
 

@@ -288,6 +288,7 @@ def codegen_ast2ir_code_emit(ctx: CodegenContext, vardefsstmts: list[c_ast.VarDe
 def codegen_ast2ir_data_emit(ctx: CodegenContext, vardefsstmts: list[c_ast.VarDefsStmt]) -> list[IR]:
     irs: list[IR] = [PreOrder('data', '')]
     for vardefsstmt in vardefsstmts:
+        # 一个问题是 我们现在要考虑研究一下函数声明
         # 如果不是函数定义
         if not vardefsstmt.is_funcdef():
             irs.extend(codegen_ast2ir_data_emit_glbvars(ctx, vardefsstmt))
@@ -415,6 +416,9 @@ def codegen_ast2ir_data_emit_str_exp(ctx: CodegenContext, exp: c_ast.Exp) -> lis
 def codegen_ast2ir_data_emit_glbvars(ctx: CodegenContext, vardefs: c_ast.VarDefsStmt) -> list[IR]:
     irs: list[IR] = []
     for vardescribe in vardefs.var_describes:
+        # 不生成 因为没什么好生成的
+        if isinstance(vardescribe, c_ast.FuncVarDescribe) and vardescribe.body is None:
+            continue
         irs.append(PreOrder('globl', f'{vardescribe.get_name()}'))
         irs.append(Label(f'{vardescribe.get_name()}'))
         irs.append(PreOrder('zero', f'{vardescribe.get_type().length()}'))
