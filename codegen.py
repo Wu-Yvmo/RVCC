@@ -275,9 +275,9 @@ def codegen_ast2ir_code_emit(ctx: CodegenContext, vardefsstmts: list[c_ast.VarDe
             irs.extend(codegen_ast2ir_reg_pop(Register(RegNo.A0)))
             # 将变量的值存储到0(a1)中
             # 获取当前param的类型
-            t = vardefs.var_describes[0].params[i].var_describes[0].t
-            if t is None:
-                raise Exception('')
+            t = vardefs.var_describes[0].params[i].var_describes[0].get_type()
+            # if t is None:
+            #     raise Exception('')
             irs.extend(codegen_ast2ir_store(t))
         # 3.生成函数体
         irs.extend(codegen_ast2ir_stmt(ctx, vardefs.var_describes[0].body))
@@ -458,16 +458,54 @@ def codegen_ast2ir_vardef(ctx: CodegenContext, vardescribe: c_ast.VarDescribe) -
     #vardescribe 是 NormalVarDescribe
     if isinstance(vardescribe, c_ast.NormalVarDescribe):
         if vardescribe.init is not None:
-            irs: list[IR] = codegen_ast2ir_exp(ctx, vardescribe.init)
-            irs.append(SD(Register(RegNo.A0), str(-ctx.query_var(vardescribe.name.value)), Register(RegNo.FP)))
+            # 1. 生成初始化语句
+            irs: list[IR] = []
+            # 生成地址
+            irs.extend(codegen_address(ctx, vardescribe.get_name()))
+            # 压栈
+            irs.extend(codegen_ast2ir_reg_push(Register(RegNo.A0)))
+            # 生成初始化值
+            irs.extend(codegen_ast2ir_exp(ctx, vardescribe.init))
+            # 出栈到a1
+            irs.extend(codegen_ast2ir_reg_pop(Register(RegNo.A1)))
+            # 生成存储语句
+            irs.extend(codegen_ast2ir_store(vardescribe.get_type()))
             return irs
         return []
     if isinstance(vardescribe, c_ast.FuncVarDescribe):
         pass
     if isinstance(vardescribe, c_ast.AryVarDescribe):
-        # 不需要做什么
+        if vardescribe.init is not None:
+            # 1. 生成初始化语句
+            irs: list[IR] = []
+            # 生成地址
+            irs.extend(codegen_address(ctx, vardescribe.get_name()))
+            # 压栈
+            irs.extend(codegen_ast2ir_reg_push(Register(RegNo.A0)))
+            # 生成初始化值
+            irs.extend(codegen_ast2ir_exp(ctx, vardescribe.init))
+            # 出栈到a1
+            irs.extend(codegen_ast2ir_reg_pop(Register(RegNo.A1)))
+            # 生成存储语句
+            irs.extend(codegen_ast2ir_store(vardescribe.get_type()))
+            return irs
         return []
-    # if isinstance(vardescribe, c_ast.PtrVarDe)
+    if isinstance(vardescribe, c_ast.PtrVarDescribe):
+        if vardescribe.init is not None:
+            # 1. 生成初始化语句
+            irs: list[IR] = []
+            # 生成地址
+            irs.extend(codegen_address(ctx, vardescribe.get_name()))
+            # 压栈
+            irs.extend(codegen_ast2ir_reg_push(Register(RegNo.A0)))
+            # 生成初始化值
+            irs.extend(codegen_ast2ir_exp(ctx, vardescribe.init))
+            # 出栈到a1
+            irs.extend(codegen_ast2ir_reg_pop(Register(RegNo.A1)))
+            # 生成存储语句
+            irs.extend(codegen_ast2ir_store(vardescribe.get_type()))
+            return irs
+        return []
     raise Exception('')
 
 # 现在有个问题 return 的 正文不需要跳转
@@ -737,12 +775,10 @@ def codegen_ast2ir_exp(ctx: CodegenContext, exp: c_ast.Exp) -> list[IR]:
     return result
 
 def codegen_ast2ir_load(t: c_type.CType) -> list[IR]:
-    if isinstance(t, c_type.CStruct) or isinstance(t, c_type.CUnion):
+    if isinstance(t, c_type.CStruct) or isinstance(t, c_type.CUnion) or isinstance(t, c_type.Ary):
         return []
     if isinstance(t, c_type.Ptr):
         return [LD(Register(RegNo.A0), '0', Register(RegNo.A0))]
-    if isinstance(t, c_type.Ary):
-        return []
     if t.length() == 8:
         return [LD(Register(RegNo.A0), '0', Register(RegNo.A0))]
     if t.length() == 4:
@@ -769,7 +805,7 @@ def codegen_ast2ir_store(t: c_type.CType) -> list[IR]:
         return [SW(Register(RegNo.A0), '0', Register(RegNo.A1))]
     if t.length() == 1:
         return [SB(Register(RegNo.A0), '0', Register(RegNo.A1))]
-    raise Exception('fuck')
+    raise Exception(f'fuck, type is: {t}')
 
 def codegen_ast2ir_retcontent(ctx: CodegenContext) -> list[IR]:
     # 返回的操作

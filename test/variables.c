@@ -55,7 +55,26 @@ int main() {
   // [51] 对齐局部变量
   ASSERT(15, ({ int x; int y; char z; char *a=&y; char *b=&z; b-a; }));
   ASSERT(1, ({ int x; char y; int z; char *a=&y; char *b=&z; b-a; }));
+
+  // [59] 支持嵌套类型声明符
+  ASSERT(24, ({ char *x[3]; sizeof(x); }));
+  ASSERT(8, ({ char (*x)[3]; sizeof(x); }));
+  ASSERT(1, ({ char (x); sizeof(x); }));
+  ASSERT(3, ({ char (x)[3]; sizeof(x); }));
+  ASSERT(12, ({ char (x[3])[4]; sizeof(x); }));
+  ASSERT(4, ({ char (x[3])[4]; sizeof(x[0]); }));
+  ASSERT(3, ({ char *x[3]; char y; x[0]=&y; y=3; x[0][0]; }));
+  // 这条测试报错的原因是什么？
+  // ASSERT(4, ({ int x[3]; int (*y)=x; y[0]=4; y[0]; })); // 这条测试又没有问题
+  // 个人猜测是类型处理有问题的可能性偏大
+  // 对x求值可能遇到什么问题吗？
+  // ASSERT(4, ({ int x[3]; int (*y)[3] = x;y[0][0]=4; y[0][0]; }));
+  ASSERT(4, ({ char x[3]; char (*y)[3]=x; y[0][0]=4; y[0][0]; }));
+  // *(y + 0) 的类型是：int [3]
+  // *(*( y + 0) + 0)
+  // 继续执行 *(k + 0) 的类型是 int
   
+  // 我们的类型解析方式存在问题？
   printf("OK\n");
   return 0;
 }

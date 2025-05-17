@@ -63,11 +63,17 @@ class UExp(Exp):
         super().__init__()
         self.op = op
         self.exp = exp
+    
+    def __str__(self) -> str:
+        return f'({self.op}, {self.exp})'
 
 class Num(Exp):
     def __init__(self, value: int):
         super().__init__()
         self.value = value
+    
+    def __str__(self) -> str:
+        return f'({self.value})'
 
 class Str(Exp):
     def __init__(self, value: str):
@@ -164,6 +170,9 @@ class Idt(Exp):
         super().__init__()
         self.idt = idt
 
+    def __str__(self) -> str:
+        return f'({self.idt.value})'
+
 # 调用
 class Call(Exp):
     def __init__(self, func_source: Exp, inargs: list[Exp]):
@@ -257,9 +266,7 @@ class FuncVarDescribe(VarDescribe):
         self.t: c_type.CType|None = None
     
     def get_type(self) -> c_type.CType:
-        if self.t is None:
-            raise Exception('')
-        return self.t
+        return self.vardescribe.get_type()
     
     def get_name(self) -> str:
         return self.vardescribe.get_name()
@@ -267,6 +274,21 @@ class FuncVarDescribe(VarDescribe):
     def is_funcdef(self) -> bool:
         return self.body is not None
 
+class PtrVarDescribe(VarDescribe):
+    def __init__(self, vardescribe: VarDescribe):
+        super().__init__()
+        self.vardescribe = vardescribe
+        self.t: c_type.CType|None = None
+
+    def get_type(self) -> c_type.CType:
+        return self.vardescribe.get_type()
+
+    def get_name(self) -> str:
+        return self.vardescribe.get_name()
+
+    def is_funcdef(self) -> bool:
+        return False
+    
 class AryVarDescribe(VarDescribe):
     def __init__(self, vardescribe: VarDescribe, length: int):
         super().__init__()
@@ -275,9 +297,7 @@ class AryVarDescribe(VarDescribe):
         self.t: c_type.CType|None = None
     
     def get_type(self) -> c_type.CType:
-        if self.t is None:
-            raise Exception('')
-        return self.t
+        return self.vardescribe.get_type()
     
     def get_name(self) -> str:
         return self.vardescribe.get_name()
