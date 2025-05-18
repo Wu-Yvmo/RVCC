@@ -319,6 +319,8 @@ def codegen_ast2ir_data_emit_str_stmt(ctx: CodegenContext, stmt: c_ast.Stmt) -> 
 def codegen_ast2ir_data_emit_str_blkstmt(ctx: CodegenContext, blkstmt: c_ast.BlkStmt) -> list[IR]:
     irs: list[IR] = []
     for stmt in blkstmt.stmts:
+        if isinstance(stmt, c_ast.TypedefStmt):
+            continue
         irs.extend(codegen_ast2ir_data_emit_str_stmt(ctx, stmt))
     return irs
 
@@ -439,6 +441,8 @@ def codegen_ast2ir_stmt(ctx: CodegenContext, stmt: c_ast.Stmt) -> list[IR]:
         return codegen_ast2ir_forstmt(ctx, stmt)
     elif isinstance(stmt, c_ast.WhileStmt):
         return codegen_ast2ir_whilestmt(ctx, stmt)
+    elif isinstance(stmt, c_ast.TypedefStmt):
+        return []
     raise Exception('')
 
 def codegen_ast2ir_expstmt(ctx: CodegenContext, expstmt: c_ast.ExpStmt) -> list[IR]:

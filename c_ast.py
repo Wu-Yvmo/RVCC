@@ -331,6 +331,10 @@ class WhileStmt(Stmt):
         self.cond = cond
         self.body = body
 
+# typedef是个吉祥物 什么都不需要做
+class TypedefStmt(Stmt):
+    def __init__(self):
+        super().__init__()
 # class Prog:
 #     def __init__(self, stmts: list[VarDefsStmt]):
 #         super().__init__()

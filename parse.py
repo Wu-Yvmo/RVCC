@@ -70,6 +70,21 @@ class ParseContext:
             if name in frame:
                 return frame[name]
         raise Exception(f'union {name} has no match')
+    
+    def register_typedef_type(self, name: str, t: c_type.CType):
+        self.typedef_label_tracker[-1][name] = t
+
+    def query_typedef_type(self, name: str) -> c_type.CType:
+        for frame in self.typedef_label_tracker[::-1]:
+            if name in frame:
+                return frame[name]
+        raise Exception(f'typedef {name} has no match')
+    
+    def has_typedef_type(self, name: str) -> bool:
+        for frame in self.typedef_label_tracker[::-1]:
+            if name in frame:
+                return True
+        return False
 
 def parse(raw_tokens: list[ctoken.CToken]) -> list[c_ast.VarDefsStmt]:
     tokens: list[ctoken.CToken] = []
@@ -84,6 +99,11 @@ def parse(raw_tokens: list[ctoken.CToken]) -> list[c_ast.VarDefsStmt]:
     ctx.register_var_type('printf', c_type.Func([c_type.Ptr(c_type.I8())], c_type.Void()))
     vardefs_stmts: list[c_ast.VarDefsStmt] = []
     while not ctx.end():
+        if ctx.current().token_type == ctoken.CTokenType.KEY_TYPEDEF:
+            # 处理typedef
+            # 这里就没必要注册结果了
+            parse_stmt_typedef(ctx)
+            continue
         vardefs = parse_stmt_vardefs(ctx)
         if not isinstance(vardefs, c_ast.VarDefsStmt):
             raise Exception()
@@ -375,7 +395,8 @@ def parse_stmt(ctx: ParseContext) -> c_ast.Stmt:
         ctx.current().token_type == ctoken.CTokenType.KEY_STRUCT or \
         ctx.current().token_type == ctoken.CTokenType.KEY_UNION or \
         ctx.current().token_type == ctoken.CTokenType.KEY_ENUM or \
-        ctx.current().token_type == ctoken.CTokenType.KEY_VOID:
+        ctx.current().token_type == ctoken.CTokenType.KEY_VOID or \
+        ctx.has_typedef_type(ctx.current().value):
         result = parse_stmt_vardefs(ctx)
     elif ctx.current().token_type == ctoken.CTokenType.KEY_RETURN:
         result = parse_stmt_ret(ctx)
@@ -385,6 +406,8 @@ def parse_stmt(ctx: ParseContext) -> c_ast.Stmt:
         result = parse_stmt_for(ctx)
     elif ctx.current().token_type == ctoken.CTokenType.KEY_WHILE:
         result = parse_stmt_while(ctx)
+    elif ctx.current().token_type == ctoken.CTokenType.KEY_TYPEDEF:
+        result = parse_stmt_typedef(ctx)
     else:
         result = parse_stmt_exp(ctx)
     ltrim(ctx)
@@ -440,18 +463,33 @@ def parse_stmt_vardefs(ctx: ParseContext, disable_frame_injection: bool = False)
 
 # 这里的处理会很复杂
 def parse_type(ctx: ParseContext) -> c_type.CType:
-    if ctx.current().token_type == ctoken.CTokenType.KEY_LONG:
-        ctx.iter()
-        return c_type.I64()
-    if ctx.current().token_type == ctoken.CTokenType.KEY_INT:
-        ctx.iter()
-        return c_type.I32()
-    if ctx.current().token_type == ctoken.CTokenType.KEY_SHORT:
-        ctx.iter()
-        return c_type.I16()
-    if ctx.current().token_type == ctoken.CTokenType.KEY_CHAR:
-        ctx.iter()
-        return c_type.I8()
+    integer_judger: Callable[[ctoken.CTokenType], bool] = lambda t: t == ctoken.CTokenType.KEY_LONG or \
+        t == ctoken.CTokenType.KEY_INT or \
+        t ==  ctoken.CTokenType.KEY_SHORT or \
+        t == ctoken.CTokenType.KEY_CHAR
+    if integer_judger(ctx.current().token_type):
+        # 按顺序解析所有的操作空间
+        long_ctr, int_ctr, short_ctr, char_ctr = 0, 0, 0, 0
+        while integer_judger(ctx.current().token_type):
+            t = ctx.current().token_type
+            if t == ctoken.CTokenType.KEY_LONG:
+                long_ctr += 1
+            elif t == ctoken.CTokenType.KEY_INT:
+                int_ctr += 1
+            elif t == ctoken.CTokenType.KEY_SHORT:
+                short_ctr += 1
+            elif t == ctoken.CTokenType.KEY_CHAR:
+                char_ctr += 1
+            ctx.iter()
+        if long_ctr >= 1:
+            return c_type.I64()
+        if short_ctr == 1:
+            return c_type.I16()
+        if int_ctr == 1:
+            return c_type.I32()
+        if char_ctr == 1:
+            return c_type.I8()
+        raise Exception('not expected')
     if ctx.current().token_type == ctoken.CTokenType.KEY_VOID:
         ctx.iter()
         return c_type.Void()
@@ -511,6 +549,10 @@ def parse_type(ctx: ParseContext) -> c_type.CType:
         return cstruct_t
     if ctx.current().token_type == ctoken.CTokenType.KEY_ENUM:
         pass
+    # 没有匹配项 从typedef中找
+    cur_tk = ctx.current()
+    ctx.iter()
+    return ctx.query_typedef_type(cur_tk.value)
     raise Exception(f'{ctx.current().token_type} {ctx.current().token_type}')
 
 def parse_param(ctx: ParseContext) -> c_ast.VarDefsStmt:
@@ -682,6 +724,16 @@ def parse_stmt_while(ctx: ParseContext) -> c_ast.Stmt:
     cond = parse_exp(ctx)
     body = parse_stmt(ctx)
     return c_ast.WhileStmt(cond, body)
+
+def parse_stmt_typedef(ctx: ParseContext) -> c_ast.Stmt:
+    ctx.iter()
+    vardefs = parse_stmt_vardefs(ctx, disable_frame_injection=True)
+    if not isinstance(vardefs, c_ast.VarDefsStmt):
+        raise Exception('')
+    # 判断一下需不需要一个兼容typedef t;的分支
+    for vardescribe in vardefs.var_describes:
+        ctx.register_typedef_type(vardescribe.get_name(), vardescribe.get_type())
+    return c_ast.TypedefStmt()
 
 # 下面的代码我完全没有审阅 重新观察 等待修改
 def add_type(ctx: ParseContext, exp: c_ast.Exp):

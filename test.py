@@ -9,7 +9,9 @@ test_items: list[str] = [
     'string',
     'variables',
     'struct',
-    'union'
+    'union',
+    'decl',
+    'typedef'
 ]
 
 test_items = test_items[::-1]
