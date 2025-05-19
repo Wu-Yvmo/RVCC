@@ -271,8 +271,24 @@ def parse_uexp(ctx: ParseContext) -> c_ast.Exp:
         ctx.iter()
         # 括号开头
         if ctx.current().token_type == ctoken.CTokenType.PC_L_ROUND_BRACKET:
+            # 读 ( 括号
             ctx.iter()
-            e = parse_exp(ctx)
+            e = None
+            # 这里需要打一个补丁
+            # 如果是类型开头 则解析类型
+            if ctx.current().token_type == ctoken.CTokenType.KEY_LONG or \
+                ctx.current().token_type == ctoken.CTokenType.KEY_INT or \
+                ctx.current().token_type == ctoken.CTokenType.KEY_SHORT or \
+                ctx.current().token_type == ctoken.CTokenType.KEY_CHAR or \
+                ctx.current().token_type == ctoken.CTokenType.KEY_STRUCT or \
+                ctx.current().token_type == ctoken.CTokenType.KEY_UNION or \
+                ctx.current().token_type == ctoken.CTokenType.KEY_ENUM or \
+                ctx.current().token_type == ctoken.CTokenType.KEY_VOID or \
+                ctx.has_typedef_type(ctx.current().value):
+                e = parse_stmt_vardefs(ctx, disable_frame_injection=True)
+            else:
+                e = parse_exp(ctx)
+            # 读 ) 括号
             ctx.iter()
             e = c_ast.UExp(c_ast.UOp.SIZEOF, e)
             add_type(ctx, e)
@@ -451,10 +467,11 @@ def parse_stmt_vardefs(ctx: ParseContext, disable_frame_injection: bool = False)
         ctx.register_var_type(vardescribes[0].get_name(), vardescribes[0].get_type())
         return c_ast.VarDefsStmt(t, vardescribes)
     # 常规定义
-    while not ctx.end() and ctx.current().token_type != ctoken.CTokenType.PC_SEMICOLON:
+    while not ctx.end() and ctx.current().token_type != ctoken.CTokenType.PC_SEMICOLON and ctx.current().token_type != ctoken.CTokenType.PC_R_ROUND_BRACKET:
         ctx.iter()
         vardescribes.append(neo_parse_vardescribe(ctx, t, disable_frame_injection))
-    ctx.iter()
+    if ctx.current().token_type == ctoken.CTokenType.PC_SEMICOLON:
+        ctx.iter()
     # 这说名我们不能够在这里进行类型注册了
     # if not disable_frame_injection:
     #     for vardescribe in vardescribes:
@@ -595,7 +612,11 @@ def neo_parse_vardescribe_prefix(ctx: ParseContext) -> c_ast.VarDescribe:
         ctx.iter()
         cur_vardescribe = neo_parse_vardescribe_suffix(ctx, n_vardescribe)
         return cur_vardescribe
-    raise Exception(f'{ctx.current().token_type}')
+    # 不应该提供ghost?
+    # 不对 应该提供 但是不应该在什么地方提供？
+    g_vardescribe = c_ast.GhostVarDescribe(None)
+    cur_vardescribe = neo_parse_vardescribe_suffix(ctx, g_vardescribe)
+    return cur_vardescribe
 
 def neo_parse_vardescribe_suffix(ctx: ParseContext, vardescribe: c_ast.VarDescribe) -> c_ast.VarDescribe:
     # 不应当在这里试图对=进行捕获
@@ -667,7 +688,7 @@ def neo_vardescribe_add_type(ctx: ParseContext, vardescribe: c_ast.VarDescribe, 
         neo_vardescribe_add_type(ctx, vardescribe.vardescribe, deep_type)
         return
     # 如果是normal 就直接设置类型为deep_type
-    if isinstance(vardescribe, c_ast.NormalVarDescribe):
+    if isinstance(vardescribe, c_ast.NormalVarDescribe) or isinstance(vardescribe, c_ast.GhostVarDescribe):
         vardescribe.t = deep_type
         return
     raise Exception('')
@@ -807,7 +828,14 @@ def add_type(ctx: ParseContext, exp: c_ast.Exp):
         else:
             raise Exception(f'unknown operator: {exp.op}')
     elif isinstance(exp, c_ast.UExp):
-        if not exp.exp.type:
+        # sizeof的右侧如果是Stmt那么不需要进行类型处理
+        # 这里有问题
+        if exp.op == c_ast.UOp.SIZEOF:
+            exp.type = c_type.I32()
+            return
+        if isinstance(exp.exp, c_ast.Stmt):
+            raise Exception('')
+        if exp.exp.type is None:
             raise Exception('')
         if exp.op == c_ast.UOp.ADD:
             exp.type = exp.exp.type

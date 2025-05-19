@@ -7,6 +7,10 @@ from ir import RegNo
 import varinfo
 import ctoken
 
+class Stmt:
+    def __init__(self):
+        super().__init__()
+
 @dataclass
 class Exp:
     def __init__(self):
@@ -59,10 +63,12 @@ def binop2uop(binop: BinOp) -> UOp:
         raise Exception('')
 
 class UExp(Exp):
-    def __init__(self, op: UOp, exp: Exp):
+    def __init__(self, op: UOp, exp: Exp|Stmt):
         super().__init__()
         self.op = op
-        self.exp = exp
+        self.exp = exp # 我们要修改这个地方的可能性 对类型签名进行sizeof需要额外的修改
+        # 还是说我们应该基于这个前提构造表达式？
+        # 所以说我是愿意计算一些表达式的
     
     def __str__(self) -> str:
         return f'({self.op}, {self.exp})'
@@ -180,10 +186,6 @@ class Call(Exp):
         self.func_source = func_source
         self.inargs = inargs
 
-class Stmt:
-    def __init__(self):
-        super().__init__()
-
 class BlkExp(Exp):
     def __init__(self, stmt: Stmt):
         super().__init__()
@@ -239,6 +241,23 @@ class VarDefsStmt(Stmt):
     def is_funcdef(self) -> bool:
         return len(self.var_describes) == 1 and self.var_describes[0].is_funcdef()
 
+class GhostVarDescribe(VarDescribe):
+    def __init__(self, init: Exp| None):
+        super().__init__()
+        self.init = init
+        self.t: c_type.CType|None = None
+
+    def get_type(self) -> c_type.CType:
+        if self.t is None:
+            raise Exception('')
+        return self.t
+
+    def get_name(self) -> str:
+        raise Exception('')
+    
+    def is_funcdef(self) -> bool:
+        return False
+    
 class NormalVarDescribe(VarDescribe):
     def __init__(self, name: ctoken.CToken, init: Exp|None):
         super().__init__()

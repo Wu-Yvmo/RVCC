@@ -11,7 +11,8 @@ test_items: list[str] = [
     'struct',
     'union',
     'decl',
-    'typedef'
+    'typedef',
+    'sizeof'
 ]
 
 test_items = test_items[::-1]

@@ -146,7 +146,12 @@ class CodegenContext:
             self.__init_frame_length_exp(exp.l)
             self.__init_frame_length_exp(exp.r)
         elif isinstance(exp, c_ast.UExp):
-            self.__init_frame_length_exp(exp.exp)
+            # 只有sizeof的右侧会出现Stmt 不需要分配内存
+            if isinstance(exp.exp, c_ast.Stmt):
+                if isinstance(exp.exp, c_ast.VarDefsStmt):
+                    pass
+            else:
+                self.__init_frame_length_exp(exp.exp)
         elif isinstance(exp, c_ast.BlkExp):
             if not isinstance(exp.stmt, c_ast.BlkStmt):
                 raise Exception('')
@@ -400,6 +405,9 @@ def codegen_ast2ir_data_emit_str_exp(ctx: CodegenContext, exp: c_ast.Exp) -> lis
         irs.extend(codegen_ast2ir_data_emit_str_exp(ctx, exp.r))
         return irs
     if isinstance(exp, c_ast.UExp):
+        # sizeof的变量不需要扫描字符串
+        if isinstance(exp.exp, c_ast.Stmt):
+            return []
         return codegen_ast2ir_data_emit_str_exp(ctx, exp.exp)
     if isinstance(exp, c_ast.Idt):
         return []
@@ -628,6 +636,8 @@ def codegen_address(ctx: CodegenContext, to_address: str|c_ast.Exp) -> list[IR]:
     if isinstance(to_address, c_ast.UExp) and to_address.op == c_ast.UOp.DEREF:
         irs: List[IR] = []
         # 对子表达式求值
+        if isinstance(to_address.exp, c_ast.Stmt):
+            raise Exception('')
         irs.extend(codegen_ast2ir_exp(ctx, to_address.exp))
         return irs
     if isinstance(to_address, c_ast.BinExp) and to_address.op == c_ast.BinOp.COMMA:
@@ -654,8 +664,9 @@ def codegen_address(ctx: CodegenContext, to_address: str|c_ast.Exp) -> list[IR]:
     raise Exception(f'can not be addressed: {to_address}')
 
 def codegen_ast2ir_exp(ctx: CodegenContext, exp: c_ast.Exp) -> list[IR]:
+    # 为什么这里会失去类型呢？所有sizeof的变量类型都是I32啊。
     if exp.type is None:
-        raise Exception(f'')
+        raise Exception(f'{exp}')
     result: list[IR] = []
     if isinstance(exp, c_ast.Num):
         result.append(LI(Register(RegNo.A0), str(exp.value)))
@@ -735,25 +746,40 @@ def codegen_ast2ir_exp(ctx: CodegenContext, exp: c_ast.Exp) -> list[IR]:
         else:
             raise Exception('')
     elif isinstance(exp, c_ast.UExp):
+        # 额外处理 exp和其他的情况 是不是应该在parse阶段就完成sizeof的求值？
         if exp.op == c_ast.UOp.ADD:
+            if not isinstance(exp.exp, c_ast.Exp):
+                raise Exception('')
             result.extend(codegen_ast2ir_exp(ctx, exp.exp))
         elif exp.op == c_ast.UOp.SUB:
+            if not isinstance(exp.exp, c_ast.Exp):
+                raise Exception('')
             result.extend(codegen_ast2ir_exp(ctx, exp.exp))
             result.append(LI(Register(RegNo.A1), '0'))
             result.append(SUB(Register(RegNo.A0), Register(RegNo.A1), Register(RegNo.A0)))
         elif exp.op == c_ast.UOp.REF:
+            if not isinstance(exp.exp, c_ast.Exp):
+                raise Exception('')
             result.extend(codegen_ast2ir_exp(ctx, exp.exp))
             result.extend(codegen_address(ctx, exp.exp))
-        elif exp.op == c_ast.UOp.DEREF:# 那么问题就在于 任何情况下deref都应当直接load吗
+        elif exp.op == c_ast.UOp.DEREF: # 那么问题就在于 任何情况下deref都应当直接load吗
+            if not isinstance(exp.exp, c_ast.Exp):
+                raise Exception('')
             result.extend(codegen_ast2ir_exp(ctx, exp.exp))
             if isinstance(exp.type, c_type.Ary):
                 pass
             else:
                 result.extend(codegen_ast2ir_load(exp.type))
         elif exp.op == c_ast.UOp.SIZEOF:
-            if exp.exp.type is None:
+            t = None
+            if isinstance(exp.exp, c_ast.Exp):
+                if exp.exp.type is None:
+                    raise Exception('')
+                t = exp.exp.type.length()
+            elif isinstance(exp.exp, c_ast.VarDefsStmt):
+                t = exp.exp.var_describes[0].get_type().length()
+            else:
                 raise Exception('')
-            t = exp.exp.type.length()
             result.append(LI(Register(RegNo.A0), str(t)))
         else:
             raise Exception('')
