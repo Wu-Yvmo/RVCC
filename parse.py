@@ -3,6 +3,7 @@ from typing import * # type: ignore
 import ctoken
 import c_ast
 import c_type
+import utils
 import varinfo
 
 # parse上下文管理器
@@ -22,6 +23,9 @@ class ParseContext:
     
     def current(self) -> ctoken.CToken:
         return self.tokens[0]
+    
+    def next(self) -> ctoken.CToken:
+        return self.tokens[1]
     
     def iter(self):
         self.tokens = self.tokens[1:]
@@ -256,6 +260,22 @@ def parse_num(ctx: ParseContext) -> c_ast.Exp:
         add_type(ctx, e)
     return e
 
+# 解析强制类型转换
+def parse_cast_exp(ctx: ParseContext) -> c_ast.Exp:
+    # 需要提供上下文支持 is_type_prefix要重构
+    if ctx.current().token_type == ctoken.CTokenType.PC_L_ROUND_BRACKET and is_type_prefix(ctx, ctx.next()):
+        # 是类型转换 (type)cast_exp
+        ctx.iter()
+        t = parse_type(ctx)
+        ctx.iter()
+        e = parse_cast_exp(ctx)
+        e = c_ast.CastExp(e, t)
+        add_type(ctx, e)
+        return e
+    # 否则就是常规的uexp
+    return parse_uexp(ctx)
+
+# 解析+ - sizeof
 def parse_uexp(ctx: ParseContext) -> c_ast.Exp:
     # 另外需要考虑sizeof的情况
     if (ctx.current().token_type == ctoken.CTokenType.OP_ADD or 
@@ -274,17 +294,8 @@ def parse_uexp(ctx: ParseContext) -> c_ast.Exp:
             # 读 ( 括号
             ctx.iter()
             e = None
-            # 这里需要打一个补丁
             # 如果是类型开头 则解析类型
-            if ctx.current().token_type == ctoken.CTokenType.KEY_LONG or \
-                ctx.current().token_type == ctoken.CTokenType.KEY_INT or \
-                ctx.current().token_type == ctoken.CTokenType.KEY_SHORT or \
-                ctx.current().token_type == ctoken.CTokenType.KEY_CHAR or \
-                ctx.current().token_type == ctoken.CTokenType.KEY_STRUCT or \
-                ctx.current().token_type == ctoken.CTokenType.KEY_UNION or \
-                ctx.current().token_type == ctoken.CTokenType.KEY_ENUM or \
-                ctx.current().token_type == ctoken.CTokenType.KEY_VOID or \
-                ctx.has_typedef_type(ctx.current().value):
+            if is_type_prefix(ctx, ctx.current()):
                 e = parse_stmt_vardefs(ctx, disable_frame_injection=True)
             else:
                 e = parse_exp(ctx)
@@ -299,17 +310,18 @@ def parse_uexp(ctx: ParseContext) -> c_ast.Exp:
         add_type(ctx, e)
         return e
     return parse_num(ctx)
-# * /
+
+# 解析 * /
 def parse_binexp_mul(ctx: ParseContext) -> c_ast.Exp:
-    l = parse_uexp(ctx)
+    l = parse_cast_exp(ctx)
     while not ctx.end() and (ctx.current().token_type == ctoken.CTokenType.OP_MUL or 
                              ctx.current().token_type == ctoken.CTokenType.OP_DIV):
         op = parse_binop(ctx)
-        l = c_ast.BinExp(l, op, parse_uexp(ctx))
+        l = c_ast.BinExp(l, op, parse_cast_exp(ctx))
         add_type(ctx, l)
     return l
 
-# + -
+# 解析 + -
 def parse_binexp_add(ctx: ParseContext) -> c_ast.Exp:
     l = parse_binexp_mul(ctx)
     while not ctx.end() and (ctx.current().token_type == ctoken.CTokenType.OP_ADD or 
@@ -369,6 +381,7 @@ def parse_binexp_lt(ctx: ParseContext) -> c_ast.Exp:
         add_type(ctx, l)
     return l
 
+# 思考：提供类型提升的逻辑 先计算l和r的类型提升结果 按照是否相同来进行类型转换
 def parse_binexp_eq(ctx: ParseContext) -> c_ast.Exp:
     l = parse_binexp_lt(ctx)
     while not ctx.end() and (ctx.current().token_type == ctoken.CTokenType.OP_EQ or 
@@ -382,7 +395,14 @@ def parse_binexp_asn(ctx: ParseContext) -> c_ast.Exp:
     l = parse_binexp_eq(ctx)
     while not ctx.end() and ctx.current().token_type == ctoken.CTokenType.OP_ASN:
         ctx.iter()
-        l = c_ast.BinExp(l, c_ast.BinOp.ASN, parse_binexp_asn(ctx))
+        r = parse_binexp_asn(ctx)
+        if l.type is None or r.type is None:
+            raise Exception('')
+        # 如果r的类型和l不相同 则构建类型转换
+        if not c_type.same_type(l.type, r.type):
+            r = c_ast.CastExp(r, l.type)
+            add_type(ctx, r)
+        l = c_ast.BinExp(l, c_ast.BinOp.ASN, r)
         add_type(ctx, l)
     return l
 
@@ -472,22 +492,43 @@ def parse_stmt_vardefs(ctx: ParseContext, disable_frame_injection: bool = False)
         vardescribes.append(neo_parse_vardescribe(ctx, t, disable_frame_injection))
     if ctx.current().token_type == ctoken.CTokenType.PC_SEMICOLON:
         ctx.iter()
-    # 这说名我们不能够在这里进行类型注册了
-    # if not disable_frame_injection:
-    #     for vardescribe in vardescribes:
-    #         ctx.register_var_type(vardescribe.get_name(), vardescribe.get_type())
     return c_ast.VarDefsStmt(t, vardescribes)
 
-# 这里的处理会很复杂
-def parse_type(ctx: ParseContext) -> c_type.CType:
-    integer_judger: Callable[[ctoken.CTokenType], bool] = lambda t: t == ctoken.CTokenType.KEY_LONG or \
+def is_type_prefix(ctx: ParseContext, tk: ctoken.CToken) -> bool:
+    '''
+    描述: 判断是否为类型前缀
+    param  ctx: 解析上下文
+    return 布尔值
+    '''
+    t = tk.token_type
+    return is_integer_prefix(ctx, tk) or \
+        t == ctoken.CTokenType.KEY_VOID or \
+        t == ctoken.CTokenType.KEY_STRUCT or \
+        t == ctoken.CTokenType.KEY_UNION or \
+        ctx.has_typedef_type(tk.value)
+
+def is_integer_prefix(ctx: ParseContext, tk: ctoken.CToken) -> bool:
+    '''
+    描述：判断是否为整型前缀
+    param  ctx: 解析上下文
+    return 布尔值
+    '''
+    t = tk.token_type
+    return t == ctoken.CTokenType.KEY_LONG or \
         t == ctoken.CTokenType.KEY_INT or \
-        t ==  ctoken.CTokenType.KEY_SHORT or \
+        t == ctoken.CTokenType.KEY_SHORT or \
         t == ctoken.CTokenType.KEY_CHAR
-    if integer_judger(ctx.current().token_type):
+
+def parse_type(ctx: ParseContext) -> c_type.CType:
+    '''
+    描述：对type进行parse
+    param  ctx: 解析上下文
+    return 所解析得到的类型
+    '''
+    if is_integer_prefix(ctx, ctx.current()):
         # 按顺序解析所有的操作空间
         long_ctr, int_ctr, short_ctr, char_ctr = 0, 0, 0, 0
-        while integer_judger(ctx.current().token_type):
+        while is_integer_prefix(ctx, ctx.current()):
             t = ctx.current().token_type
             if t == ctoken.CTokenType.KEY_LONG:
                 long_ctr += 1
@@ -570,7 +611,6 @@ def parse_type(ctx: ParseContext) -> c_type.CType:
     cur_tk = ctx.current()
     ctx.iter()
     return ctx.query_typedef_type(cur_tk.value)
-    raise Exception(f'{ctx.current().token_type} {ctx.current().token_type}')
 
 def parse_param(ctx: ParseContext) -> c_ast.VarDefsStmt:
     t = parse_type(ctx)
@@ -651,18 +691,8 @@ def neo_parse_vardescribe_suffix(ctx: ParseContext, vardescribe: c_ast.VarDescri
         ary_vardescribe = c_ast.AryVarDescribe(vardescribe, idx)
         # 继续解析
         return neo_parse_vardescribe_suffix(ctx, ary_vardescribe)
-    # if ctx.current().token_type == ctoken.CTokenType.OP_ASN:
-    #     ctx.iter()
-    #     init = parse_exp_disable_comma(ctx)
-    #     vardescribe.init = init
-    #     # 继续解析
-    #     return neo_parse_vardescribe_suffix(ctx, vardescribe)
-    # 到这里说明已经解析不出来什么东西了 返回
     return vardescribe
 
-# 修改类型解析协议?
-# char (*a)[3] , a 的类型是 ptr(ary(char, 3))
-# a被解引用再下标得到的是什么？莫名其妙 不是很理解
 def neo_vardescribe_add_type(ctx: ParseContext, vardescribe: c_ast.VarDescribe, deep_type: c_type.CType):
     if isinstance(vardescribe, c_ast.FuncVarDescribe):
         # 对函数的参数进行类型解析
@@ -759,7 +789,10 @@ def parse_stmt_typedef(ctx: ParseContext) -> c_ast.Stmt:
 # 下面的代码我完全没有审阅 重新观察 等待修改
 def add_type(ctx: ParseContext, exp: c_ast.Exp):
     if isinstance(exp, c_ast.Num):
-        exp.type = c_type.I32()
+        if utils.i32_sufficient(int(exp.value)):
+            exp.type = c_type.I32()
+        else:
+            exp.type = c_type.I64()
     elif isinstance(exp, c_ast.Str):
         exp.type = c_type.Ary(c_type.I8(), len(exp.value) + 1)
     elif isinstance(exp, c_ast.BlkExp):
@@ -847,10 +880,12 @@ def add_type(ctx: ParseContext, exp: c_ast.Exp):
             if not isinstance(exp.exp.type, c_type.Ptr) and not isinstance(exp.exp.type, c_type.Ary):
                 raise Exception(f'{exp.exp} {exp.exp.type}')
             exp.type = exp.exp.type.base
-        elif exp.op == c_ast.UOp.SIZEOF:
-            exp.type = c_type.I32()
         else:
             raise Exception('')
+    elif isinstance(exp, c_ast.CastExp):
+        exp.type = exp.cast_to
+    else:
+        raise Exception('')
 
 if __name__ == '__main__':
     tokens = ctokenize.tokenize('int main() {return 1;}')

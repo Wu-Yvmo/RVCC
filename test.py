@@ -12,7 +12,8 @@ test_items: list[str] = [
     'union',
     'decl',
     'typedef',
-    'sizeof'
+    'sizeof',
+    'usualconv'
 ]
 
 test_items = test_items[::-1]

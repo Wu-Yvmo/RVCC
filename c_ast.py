@@ -73,6 +73,12 @@ class UExp(Exp):
     def __str__(self) -> str:
         return f'({self.op}, {self.exp})'
 
+class CastExp(Exp):
+    def __init__(self, exp: Exp, cast_to: c_type.CType):
+        super().__init__()
+        self.exp = exp
+        self.cast_to = cast_to
+
 class Num(Exp):
     def __init__(self, value: int):
         super().__init__()

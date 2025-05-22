@@ -411,14 +411,21 @@ def codegen_ast2ir_data_emit_str_exp(ctx: CodegenContext, exp: c_ast.Exp) -> lis
         return codegen_ast2ir_data_emit_str_exp(ctx, exp.exp)
     if isinstance(exp, c_ast.Idt):
         return []
+    # 为调用生成字符串IR
     if isinstance(exp, c_ast.Call):
         irs: list[IR] = []
         for inarg in exp.inargs:
             irs.extend(codegen_ast2ir_data_emit_str_exp(ctx, inarg))
         return irs
+    # 为语句表达式生成字符串IR
     if isinstance(exp, c_ast.BlkExp):
         irs: list[IR] = []
         irs.extend(codegen_ast2ir_data_emit_str_stmt(ctx, exp.stmt))
+        return irs
+    # 为类型转换表达式生成字符串IR
+    if isinstance(exp, c_ast.CastExp):
+        irs: list[IR] = []
+        irs.extend(codegen_ast2ir_data_emit_str_exp(ctx, exp.exp))
         return irs
     raise Exception('shouldn not run')
 
@@ -663,8 +670,10 @@ def codegen_address(ctx: CodegenContext, to_address: str|c_ast.Exp) -> list[IR]:
         return irs
     raise Exception(f'can not be addressed: {to_address}')
 
+def should_use_64bit(t: c_type.CType) -> bool:
+    return isinstance(t, c_type.Ptr) or isinstance(t, c_type.Ary) or isinstance(t, c_type.I64)
+
 def codegen_ast2ir_exp(ctx: CodegenContext, exp: c_ast.Exp) -> list[IR]:
-    # 为什么这里会失去类型呢？所有sizeof的变量类型都是I32啊。
     if exp.type is None:
         raise Exception(f'{exp}')
     result: list[IR] = []
@@ -672,13 +681,10 @@ def codegen_ast2ir_exp(ctx: CodegenContext, exp: c_ast.Exp) -> list[IR]:
         result.append(LI(Register(RegNo.A0), str(exp.value)))
         return result
     elif isinstance(exp, c_ast.BlkExp):
-        # 执行整个stmt
-        # 为什么在expstmt内部使用变量会有问题？
         result.extend(codegen_ast2ir_stmt(ctx, exp.stmt))
         return result
     elif isinstance(exp, c_ast.BinExp):
         # 赋值表达式单独进行处理
-        # 问题在于 对子表达式进行了求地址 但是没有进行求值 这个问题如何解决？
         if exp.op == c_ast.BinOp.ASN:
             # 任何有左地址的都可以进行赋值运算
             # 1.生成左子表达式的地址
@@ -711,15 +717,27 @@ def codegen_ast2ir_exp(ctx: CodegenContext, exp: c_ast.Exp) -> list[IR]:
         # 出栈到a1
         result.extend(codegen_ast2ir_reg_pop(Register(RegNo.A1)))
         # 运算
-        # 我们面临的困境是 前面执行了生成左子表达式和右子表达式的逻辑 但不应该是这样的
+        # 应当从运算的结果来考虑。如果运算结果是：long ptr ary，那么就应当选择64位指令
         if exp.op == c_ast.BinOp.ADD:
-            result.append(ADD(Register(RegNo.A0), Register(RegNo.A0), Register(RegNo.A1)))
+            if should_use_64bit(exp.type):
+                result.append(ADD(Register(RegNo.A0), Register(RegNo.A0), Register(RegNo.A1)))
+            else:
+                result.append(ADDW(Register(RegNo.A0), Register(RegNo.A0), Register(RegNo.A1)))
         elif exp.op == c_ast.BinOp.SUB:
-            result.append(SUB(Register(RegNo.A0), Register(RegNo.A0), Register(RegNo.A1)))
+            if should_use_64bit(exp.type):
+                result.append(SUB(Register(RegNo.A0), Register(RegNo.A0), Register(RegNo.A1)))
+            else:
+                result.append(SUBW(Register(RegNo.A0), Register(RegNo.A0), Register(RegNo.A1)))
         elif exp.op == c_ast.BinOp.MUL:
-            result.append(MUL(Register(RegNo.A0), Register(RegNo.A0), Register(RegNo.A1)))
+            if should_use_64bit(exp.type):
+                result.append(MUL(Register(RegNo.A0), Register(RegNo.A0), Register(RegNo.A1)))
+            else:
+                result.append(MULW(Register(RegNo.A0), Register(RegNo.A0), Register(RegNo.A1)))
         elif exp.op == c_ast.BinOp.DIV:
-            result.append(DIV(Register(RegNo.A0), Register(RegNo.A0), Register(RegNo.A1)))
+            if should_use_64bit(exp.type):
+                result.append(DIV(Register(RegNo.A0), Register(RegNo.A0), Register(RegNo.A1)))
+            else:
+                result.append(DIVW(Register(RegNo.A0), Register(RegNo.A0), Register(RegNo.A1)))
         elif exp.op == c_ast.BinOp.EQ:
             result.append(XOR(Register(RegNo.A0), Register(RegNo.A0), Register(RegNo.A1)))
             result.append(SEQZ(Register(RegNo.A0), Register(RegNo.A0)))
@@ -755,8 +773,10 @@ def codegen_ast2ir_exp(ctx: CodegenContext, exp: c_ast.Exp) -> list[IR]:
             if not isinstance(exp.exp, c_ast.Exp):
                 raise Exception('')
             result.extend(codegen_ast2ir_exp(ctx, exp.exp))
-            result.append(LI(Register(RegNo.A1), '0'))
-            result.append(SUB(Register(RegNo.A0), Register(RegNo.A1), Register(RegNo.A0)))
+            if should_use_64bit(exp.type):
+                result.append(NEG(Register(RegNo.A0), Register(RegNo.A0)))
+            else:
+                result.append(NEGW(Register(RegNo.A0), Register(RegNo.A0)))
         elif exp.op == c_ast.UOp.REF:
             if not isinstance(exp.exp, c_ast.Exp):
                 raise Exception('')
@@ -804,6 +824,58 @@ def codegen_ast2ir_exp(ctx: CodegenContext, exp: c_ast.Exp) -> list[IR]:
     # 行为：加载字符串的地址到a0寄存器中
     elif isinstance(exp, c_ast.Str):
         result.append(LA(Register(RegNo.A0), ctx.str_labels[exp.value]))
+    elif isinstance(exp, c_ast.CastExp):
+        # 为类型转换生成代码
+        # 生成子表达式
+        irs = codegen_ast2ir_exp(ctx, exp.exp)
+        # 这真的是正确的转换吗？我感觉不太对
+        # trim+32 trim+16 trim+8 trim-8 trim-16 trim-32
+        # 只有从大转小的时候需要额外处理 因为扩增会在寄存器中自动完成
+        conv_ir_table: dict[str, list[IR]] = {
+            'i64->i32': [
+                SLLI(Register(RegNo.A0), Register(RegNo.A0), '32'),
+                SRAI(Register(RegNo.A0), Register(RegNo.A0), '32')
+            ],
+            'i64->i16': [
+                SLLI(Register(RegNo.A0), Register(RegNo.A0), '48'),
+                SRAI(Register(RegNo.A0), Register(RegNo.A0), '48')
+            ],
+            'i64->i8': [
+                SLLI(Register(RegNo.A0), Register(RegNo.A0), '56'),
+                SRAI(Register(RegNo.A0), Register(RegNo.A0), '56')
+            ],
+            'i32->i16': [
+                SLLI(Register(RegNo.A0), Register(RegNo.A0), '48'),
+                SRAI(Register(RegNo.A0), Register(RegNo.A0), '48')
+            ],
+            'i32->i8': [
+                SLLI(Register(RegNo.A0), Register(RegNo.A0), '56'),
+                SRAI(Register(RegNo.A0), Register(RegNo.A0), '56')
+            ],
+            'i16->i8': [
+                SLLI(Register(RegNo.A0), Register(RegNo.A0), '56'),
+                SRAI(Register(RegNo.A0), Register(RegNo.A0), '56')
+            ]
+        }
+        # long -> int
+        if isinstance(exp.cast_to, c_type.I32) and isinstance(exp.exp.type, c_type.I64):
+            irs.extend(conv_ir_table['i64->i32'])
+        # long -> short
+        elif isinstance(exp.cast_to, c_type.I16) and isinstance(exp.exp.type, c_type.I64):
+            irs.extend(conv_ir_table['i64->i16'])
+        # long -> char
+        elif isinstance(exp.cast_to, c_type.I8) and isinstance(exp.exp.type, c_type.I64):
+            irs.extend(conv_ir_table['i64->i8'])
+        # int -> short
+        elif isinstance(exp.cast_to, c_type.I16) and isinstance(exp.exp.type, c_type.I32):
+            irs.extend(conv_ir_table['i32->i16'])
+        # int -> char
+        elif isinstance(exp.cast_to, c_type.I8) and isinstance(exp.exp.type, c_type.I32):
+            irs.extend(conv_ir_table['i32->i8'])
+        # short -> char
+        elif isinstance(exp.cast_to, c_type.I8) and isinstance(exp.exp.type, c_type.I16):
+            irs.extend(conv_ir_table['i16->i8'])
+        return irs
     else:
         raise Exception('')
     return result
@@ -890,16 +962,32 @@ def codegen_ir2asm(irs: List[IR]) -> str:
                 code += f"    addi {ir.dest.no.name.lower()}, {ir.src1.no.name.lower()}, {ir.value}\n"
             elif isinstance(ir, ADD):
                 code += f"    add {ir.dest.no.name.lower()}, {ir.src1.no.name.lower()}, {ir.src2.no.name.lower()}\n"
+            elif isinstance(ir, ADDW):
+                code += f"    addw {ir.dest.no.name.lower()}, {ir.src1.no.name.lower()}, {ir.src2.no.name.lower()}\n"
             elif isinstance(ir, SUB):
                 code += f"    sub {ir.dest.no.name.lower()}, {ir.src1.no.name.lower()}, {ir.src2.no.name.lower()}\n"
+            elif isinstance(ir, SUBW):
+                code += f"    subw {ir.dest.no.name.lower()}, {ir.src1.no.name.lower()}, {ir.src2.no.name.lower()}\n"
+            elif isinstance(ir, NEG):
+                code += f"    neg {ir.dest.no.name.lower()}, {ir.src.no.name.lower()}\n"
+            elif isinstance(ir, NEGW):
+                code += f"    negw {ir.dest.no.name.lower()}, {ir.src.no.name.lower()}\n"
             elif isinstance(ir, MUL):
                 code += f"    mul {ir.dest.no.name.lower()}, {ir.src1.no.name.lower()}, {ir.src2.no.name.lower()}\n"
+            elif isinstance(ir, MULW):
+                code += f"    mulw {ir.dest.no.name.lower()}, {ir.src1.no.name.lower()}, {ir.src2.no.name.lower()}\n"
             elif isinstance(ir, DIV):
                 code += f"    div {ir.dest.no.name.lower()}, {ir.src1.no.name.lower()}, {ir.src2.no.name.lower()}\n"
+            elif isinstance(ir, DIVW):
+                code += f"    divw {ir.dest.no.name.lower()}, {ir.src1.no.name.lower()}, {ir.src2.no.name.lower()}\n"
             elif isinstance(ir, XOR):
                 code += f"    xor {ir.dest.no.name.lower()}, {ir.src1.no.name.lower()}, {ir.src2.no.name.lower()}\n"
             elif isinstance(ir, XORI):
                 code += f"    xori {ir.dest.no.name.lower()}, {ir.src.no.name.lower()}, {ir.value}\n"
+            elif isinstance(ir, SLLI):
+                code += f"    slli {ir.dest.no.name.lower()}, {ir.src.no.name.lower()}, {ir.value}\n"
+            elif isinstance(ir, SRAI):
+                code += f"    srli {ir.dest.no.name.lower()}, {ir.src.no.name.lower()}, {ir.value}\n"
             elif isinstance(ir, SEQZ):
                 code += f"    seqz {ir.dest.no.name.lower()}, {ir.src.no.name.lower()}\n"
             elif isinstance(ir, SNEZ):

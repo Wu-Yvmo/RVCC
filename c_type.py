@@ -158,6 +158,18 @@ class CEnum(CType):
         self.label = label
         self.items = items
 
+def same_type(tl: CType, tr: CType) -> bool:
+    # 判断类型是否相同
+    if isinstance(tl, I8) and isinstance(tr, I8):
+        return True
+    if isinstance(tl, I16) and isinstance(tr, I16):
+        return True
+    if isinstance(tl, I32) and isinstance(tr, I32):
+        return True
+    if isinstance(tl, I64) and isinstance(tr, I64):
+        return True
+    return False
+
 if __name__ == '__main__':
     print(I64().length())
     print(I32().length())

@@ -94,6 +94,14 @@ class ADD(Instruction):
         self.src1 = src1
         self.src2 = src2
 
+# 指令+的32位版本
+class ADDW(Instruction):
+    def __init__(self, dest: Register, src1: Register, src2: Register):
+        super().__init__()
+        self.dest = dest
+        self.src1 = src1
+        self.src2 = src2
+
 # 指令+立即数版本
 class ADDI(Instruction):
     def __init__(self, dest: Register, src1: Register, value: str):
@@ -110,6 +118,28 @@ class SUB(Instruction):
         self.src1 = src1
         self.src2 = src2
 
+# 指令-的32位版本
+class SUBW(Instruction):
+    def __init__(self, dest: Register, src1: Register, src2: Register):
+        super().__init__()
+        self.dest = dest
+        self.src1 = src1
+        self.src2 = src2
+
+# 求反
+class NEG(Instruction):
+    def __init__(self, dest: Register, src: Register):
+        super().__init__()
+        self.dest = dest
+        self.src = src
+
+# 求反32位版本
+class NEGW(Instruction):
+    def __init__(self, dest: Register, src: Register):
+        super().__init__()
+        self.dest = dest
+        self.src = src
+
 # 指令*
 class MUL(Instruction):
     def __init__(self, dest: Register, src1: Register, src2: Register):
@@ -118,8 +148,24 @@ class MUL(Instruction):
         self.src1 = src1
         self.src2 = src2
 
+# 指令*的32位版本
+class MULW(Instruction):
+    def __init__(self, dest: Register, src1: Register, src2: Register):
+        super().__init__()
+        self.dest = dest
+        self.src1 = src1
+        self.src2 = src2
+
 # 指令/
 class DIV(Instruction):
+    def __init__(self, dest: Register, src1: Register, src2: Register):
+        super().__init__()
+        self.dest = dest
+        self.src1 = src1
+        self.src2 = src2
+
+# 指令/的32位版本
+class DIVW(Instruction):
     def __init__(self, dest: Register, src1: Register, src2: Register):
         super().__init__()
         self.dest = dest
@@ -141,6 +187,24 @@ class XORI(Instruction):
         self.dest = dest
         self.src = src
         self.value = value
+
+# 逻辑左移-立即数版本
+class SLLI(Instruction):
+    def __init__(self, dest: Register, src: Register, value: str):
+        super().__init__()
+        self.dest = dest
+        self.src = src
+        self.value = value
+
+# 算数右移-立即数版本
+class SRAI(Instruction):
+    def __init__(self, dest: Register, src: Register, value: str):
+        super().__init__()
+        self.dest = dest
+        self.src = src
+        self.value = value
+
+# 逻辑右移（暂时没有提供支持）
 
 # 指令seqz
 class SEQZ(Instruction):
