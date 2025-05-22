@@ -1,2 +1,5 @@
 # RVCC
-RVCC is a C language compiler.(Still in development, will provide usable version in less than 3 years)
+RVCC 脱胎于国科大软件所的rvcc课程，并使用python编写。
+
+# 实现功能
+

@@ -12,6 +12,7 @@ class ParseContext:
         super().__init__()
         self.tokens = tokens
         self.type_tracker: list[dict[str, c_type.CType]] = []
+        self.ret_type: c_type.CType|None = None
         # enum union 和 typedef使用同一个tracker?
         self.struct_label_tracker: list[dict[str, c_type.CType]] = []
         self.enum_label_tracker: list[dict[str, c_type.CType]] = []
@@ -99,8 +100,8 @@ def parse(raw_tokens: list[ctoken.CToken]) -> list[c_ast.VarDefsStmt]:
     ctx = ParseContext(tokens)
     ctx.enter_scope()
     # 在全局变量作用域中添加assert 和 printf
-    ctx.register_var_type('assert', c_type.Func([c_type.I64(), c_type.I64(), c_type.Ptr(c_type.I8())], c_type.Void()))
-    ctx.register_var_type('printf', c_type.Func([c_type.Ptr(c_type.I8())], c_type.Void()))
+    ctx.register_var_type('assert', c_type.Func([('', c_type.I64()), ('', c_type.I64()), ('', c_type.Ptr(c_type.I8()))], c_type.Void()))
+    ctx.register_var_type('printf', c_type.Func([('', c_type.Ptr(c_type.I8()))], c_type.Void()))
     vardefs_stmts: list[c_ast.VarDefsStmt] = []
     while not ctx.end():
         if ctx.current().token_type == ctoken.CTokenType.KEY_TYPEDEF:
@@ -318,10 +319,12 @@ def parse_binexp_mul(ctx: ParseContext) -> c_ast.Exp:
                              ctx.current().token_type == ctoken.CTokenType.OP_DIV):
         op = parse_binop(ctx)
         l = c_ast.BinExp(l, op, parse_cast_exp(ctx))
+        universal_convert(ctx, l)
         add_type(ctx, l)
     return l
 
 # 解析 + -
+# 思考：+-比较复杂 类型转换应该是怎样的？
 def parse_binexp_add(ctx: ParseContext) -> c_ast.Exp:
     l = parse_binexp_mul(ctx)
     while not ctx.end() and (ctx.current().token_type == ctoken.CTokenType.OP_ADD or 
@@ -336,6 +339,7 @@ def parse_binexp_add(ctx: ParseContext) -> c_ast.Exp:
             neo_r = c_ast.BinExp(l.r, c_ast.BinOp.MUL, const_len)
             add_type(ctx, neo_r)
             l.r = neo_r
+            add_type(ctx, l)
         # l 非指针 r 指针
         elif not isinstance(l.l.type, c_type.Ptr) and isinstance(l.r.type, c_type.Ptr):
             const_len = c_ast.Num(l.r.type.length())
@@ -343,6 +347,7 @@ def parse_binexp_add(ctx: ParseContext) -> c_ast.Exp:
             neo_l = c_ast.BinExp(l.l, c_ast.BinOp.MUL, const_len)
             add_type(ctx, neo_l)
             l.l = neo_l
+            add_type(ctx, l)
         # l 指针 r指针
         elif isinstance(l.l.type, c_type.Ptr) and isinstance(l.r.type, c_type.Ptr):
             if not l.op == c_ast.BinOp.SUB:
@@ -351,19 +356,24 @@ def parse_binexp_add(ctx: ParseContext) -> c_ast.Exp:
             const_len = c_ast.Num(l.l.type.base.length())
             add_type(ctx, const_len)
             l = c_ast.BinExp(l, c_ast.BinOp.DIV, const_len)
+            add_type(ctx, l)
         elif isinstance(l.l.type, c_type.Ary) and not isinstance(l.r.type, c_type.Ary):
             const_len = c_ast.Num(l.l.type.base.length())
             add_type(ctx, const_len)
             neo_r = c_ast.BinExp(l.r, c_ast.BinOp.MUL, const_len)
             add_type(ctx, neo_r)
             l.r = neo_r
+            add_type(ctx, l)
         elif not isinstance(l.l.type, c_type.Ary) and isinstance(l.r.type, c_type.Ary):
             const_len = c_ast.Num(l.r.type.length())
             add_type(ctx, const_len)
             neo_l = c_ast.BinExp(l.l, c_ast.BinOp.MUL, const_len)
             add_type(ctx, neo_l)
             l.l = neo_l
-        add_type(ctx, l)
+            add_type(ctx, l)
+        else: # 为什么会报错？
+            universal_convert(ctx, l)
+            add_type(ctx, l)
     return l
 
 # # 修正指针运算，构造为新的表达式
@@ -378,8 +388,43 @@ def parse_binexp_lt(ctx: ParseContext) -> c_ast.Exp:
                              ctx.current().token_type == ctoken.CTokenType.OP_GE):
         op = parse_binop(ctx)
         l = c_ast.BinExp(l, op, parse_binexp_add(ctx))
+        universal_convert(ctx, l)
         add_type(ctx, l)
     return l
+
+# 求兼容类型
+def type_compatibalize(l: c_type.CType, r: c_type.CType) -> c_type.CType:
+    # 其实我不是很理解这一步 但是原作者提供了 我们也跟进
+    if isinstance(l, c_type.Ptr) or isinstance(l, c_type.Ary):
+        return c_type.Ptr(l.base)
+    if isinstance(l, c_type.I64) or isinstance(r, c_type.I64):
+        return c_type.I64()
+    return c_type.I32()
+
+# 处理通用表达式类型转换的逻辑
+def universal_convert(ctx: ParseContext, e: c_ast.Exp):
+    # binexp
+    if isinstance(e, c_ast.BinExp):
+        if e.l.type is None or e.r.type is None:
+            raise Exception(f'{e} {e.l} {e.r}')
+        type_compatible = type_compatibalize(e.l.type, e.r.type)
+        if not c_type.same_type(e.l.type, type_compatible):
+            e.l = c_ast.CastExp(e.l, type_compatible)
+            add_type(ctx, e.l)
+        if not c_type.same_type(e.r.type, type_compatible):
+            e.r = c_ast.CastExp(e.r, type_compatible)
+            add_type(ctx, e.r)
+    # 处理 单目运算符-的类型转换 我有个问题：为什么要把-转换成i32或者i64?
+    if isinstance(e, c_ast.UExp):
+        # 对neg进行处理。 困难是什么？
+        if not isinstance(e.exp, c_ast.Exp):
+            return
+        if e.exp.type is None:
+            raise Exception('')
+        type_compatible = type_compatibalize(c_type.I32(), e.exp.type)
+        if not c_type.same_type(e.exp.type, type_compatible):
+            e.exp = c_ast.CastExp(e.exp, type_compatible)
+            add_type(ctx, e.exp)
 
 # 思考：提供类型提升的逻辑 先计算l和r的类型提升结果 按照是否相同来进行类型转换
 def parse_binexp_eq(ctx: ParseContext) -> c_ast.Exp:
@@ -388,6 +433,9 @@ def parse_binexp_eq(ctx: ParseContext) -> c_ast.Exp:
                              ctx.current().token_type == ctoken.CTokenType.OP_NE):
         op = parse_binop(ctx)
         l = c_ast.BinExp(l, op, parse_binexp_lt(ctx))
+        # 执行转换的构造 如果有必要
+        universal_convert(ctx, l)
+        # 进行类型提升
         add_type(ctx, l)
     return l
 
@@ -482,7 +530,7 @@ def parse_stmt_vardefs(ctx: ParseContext, disable_frame_injection: bool = False)
         return c_ast.VarDefsStmt(t, [])
     vardescribes: list[c_ast.VarDescribe] = [neo_parse_vardescribe(ctx, t, disable_frame_injection)]
     # 如果我们解析了一个函数定义，那就应当注册函数名到type_tracker中 然后直接返回
-    if vardescribes[0].is_funcdef():
+    if isinstance(vardescribes[0].get_type(), c_type.Func) and vardescribes[0].body is not None:
         # 把函数名注册为函数变量
         ctx.register_var_type(vardescribes[0].get_name(), vardescribes[0].get_type())
         return c_ast.VarDefsStmt(t, vardescribes)
@@ -628,8 +676,12 @@ def neo_parse_vardescribe(ctx: ParseContext, deep_type: c_type.CType, disalbe_ty
         var_describe.init = parse_exp_disable_comma(ctx)
         return var_describe
     if not ctx.end() and ctx.current().token_type == ctoken.CTokenType.PC_L_CURLY_BRACKET:
-        if not isinstance(var_describe, c_ast.FuncVarDescribe):
-            raise Exception('')
+        if not isinstance(var_describe.get_type(), c_type.Func):
+            raise Exception(f'{var_describe.t}')
+        t = var_describe.get_type()
+        if not isinstance(t, c_type.Func):
+            raise Exception(f'{t}')
+        ctx.ret_type = t.ret
         body = parse_stmt(ctx)
         var_describe.body = body
         return var_describe
@@ -667,7 +719,7 @@ def neo_parse_vardescribe_suffix(ctx: ParseContext, vardescribe: c_ast.VarDescri
         # 问题就出在这里
         ctx.iter()
         params: list[c_ast.VarDefsStmt] = []
-        while not ctx.end() and ctx.current().token_type!= ctoken.CTokenType.PC_R_ROUND_BRACKET:
+        while not ctx.end() and ctx.current().token_type != ctoken.CTokenType.PC_R_ROUND_BRACKET:
             params.append(parse_param(ctx))
             if ctx.current().token_type == ctoken.CTokenType.PC_COMMA:
                 ctx.iter()
@@ -696,10 +748,10 @@ def neo_parse_vardescribe_suffix(ctx: ParseContext, vardescribe: c_ast.VarDescri
 def neo_vardescribe_add_type(ctx: ParseContext, vardescribe: c_ast.VarDescribe, deep_type: c_type.CType):
     if isinstance(vardescribe, c_ast.FuncVarDescribe):
         # 对函数的参数进行类型解析
-        params_type: list[c_type.CType] = []
+        params_type: list[tuple[str, c_type.CType]] = []
         for param in vardescribe.params:
             neo_vardescribe_add_type(ctx, param.var_describes[0], param.btype)
-            params_type.append(param.var_describes[0].get_type())
+            params_type.append((param.var_describes[0].get_name(), param.var_describes[0].get_type()))
         # 构造函数签名
         deep_type = c_type.Func(params_type, deep_type)
         # 对函数的 函数提供源头进行类型解析
@@ -723,12 +775,20 @@ def neo_vardescribe_add_type(ctx: ParseContext, vardescribe: c_ast.VarDescribe, 
         return
     raise Exception('')
 
+# 解析return表达式
+# 需要跟踪当前解析函数的类型
 def parse_stmt_ret(ctx: ParseContext) -> c_ast.Stmt:
     ctx.iter()
     if ctx.current().token_type == ctoken.CTokenType.PC_SEMICOLON:
         ctx.iter()
         return c_ast.RetStmt(None)
     value = parse_exp(ctx)
+    if ctx.ret_type is None or value.type is None:
+        raise Exception('')
+    type_compatibalize(ctx.ret_type, value.type)
+    if not c_type.same_type(ctx.ret_type, value.type):
+        value = c_ast.CastExp(value, ctx.ret_type)
+        add_type(ctx, value)
     ctx.iter()
     return c_ast.RetStmt(value)
 
@@ -738,7 +798,7 @@ def parse_stmt_if(ctx: ParseContext) -> c_ast.Stmt:
     t = parse_stmt(ctx)
     if ctx.current().token_type == ctoken.CTokenType.KEY_ELSE:
         ctx.iter()
-        f = parse_stmt(ctx)
+        f = parse_stmt(ctx) # 有这样的情况吗
         return c_ast.IfStmt(cond, t, f)
     return c_ast.IfStmt(cond, t, None)
 

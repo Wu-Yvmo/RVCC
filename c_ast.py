@@ -222,6 +222,7 @@ class VarDescribe:
         super().__init__()
         self.t: c_type.CType|None = None
         self.init: Exp|None = None
+        self.body: Stmt|None = None
     
     def get_type(self) -> c_type.CType:
         raise Exception('')
@@ -259,7 +260,7 @@ class GhostVarDescribe(VarDescribe):
         return self.t
 
     def get_name(self) -> str:
-        raise Exception('')
+        raise Exception(f'{self.t}')
     
     def is_funcdef(self) -> bool:
         return False

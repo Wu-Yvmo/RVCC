@@ -243,6 +243,13 @@ class SW(Instruction):
         self.offset = offset
         self.base = base
 
+class SH(Instruction):
+    def __init__(self, src: Register, offset: str, base: Register):
+        super().__init__()
+        self.src = src
+        self.offset = offset
+        self.base = base
+
 # 存储字节
 class SB(Instruction):
     def __init__(self, src: Register, offset: str, base: Register):
@@ -261,6 +268,14 @@ class LD(Instruction):
 
 # 加载字
 class LW(Instruction):
+    def __init__(self, dest: Register, offset: str, base: Register):
+        super().__init__()
+        self.dest = dest
+        self.offset = offset
+        self.base = base
+
+# 加载半字
+class LH(Instruction):
     def __init__(self, dest: Register, offset: str, base: Register):
         super().__init__()
         self.dest = dest

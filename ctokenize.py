@@ -18,7 +18,7 @@ patterns = [(r'^typedef', ctoken.CTokenType.KEY_TYPEDEF),
             (r'^short', ctoken.CTokenType.KEY_SHORT),
             (r'^char', ctoken.CTokenType.KEY_CHAR),
             (r'^void', ctoken.CTokenType.KEY_VOID),
-            (r'^[a-zA-Z_]+[0-9]*', ctoken.CTokenType.IDENTIFIER),
+            (r'^[a-zA-Z_]+[a-zA-Z_0-9]*', ctoken.CTokenType.IDENTIFIER),
             (r'^[0-9]+', ctoken.CTokenType.NUMBER),
             # (r'^"((\\\\)|(\\\")|([^\"\\s]))*"', ctoken.CTokenType.STRING), 不用
             (r'^==', ctoken.CTokenType.OP_EQ),

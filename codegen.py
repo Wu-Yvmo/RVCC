@@ -92,12 +92,14 @@ class CodegenContext:
     def init_frame_length(self, vardefs: c_ast.VarDefsStmt):
         # 现在是对整个函数进行初始化
         # 要对传入的参数也进行编址
-        if not isinstance(vardefs.var_describes[0], c_ast.FuncVarDescribe):
+        functype = vardefs.var_describes[0].get_type()
+        if not isinstance(functype, c_type.Func):
             raise Exception('')
         frame_0: list[varinfo.VarInfo] = []
-        for param in vardefs.var_describes[0].params:
-            vi = varinfo.VarInfo(param.var_describes[0].get_name())
-            vi.t = param.var_describes[0].get_type()
+        # 这里必须获得FuncVarDescribe 应当进行特殊处理 难搞 给函数类型中添加名称字段
+        for param in functype.args:
+            vi = varinfo.VarInfo(param[0])
+            vi.t = param[1]
             self.frame_length += vi.t.length()
             vi.offset = self.frame_length
             frame_0.append(vi)
@@ -241,8 +243,8 @@ class CodegenContext:
 def codegen_ast2ir_code_emit(ctx: CodegenContext, vardefsstmts: list[c_ast.VarDefsStmt]) -> list[IR]:
     irs: list[IR] = [PreOrder('text', '')]
     for vardefs in vardefsstmts:
-        # 跳过所有非函数定义的item
-        if not vardefs.is_funcdef():
+        # 跳过所有非函数定义的item 这里有问题
+        if not (len(vardefs.var_describes) == 1 and vardefs.var_describes[0].body is not None):
             continue
         # 处理函数定义
         ctx.func_name = vardefs.var_describes[0].get_name()
@@ -259,30 +261,32 @@ def codegen_ast2ir_code_emit(ctx: CodegenContext, vardefsstmts: list[c_ast.VarDe
         #   sp复制到fp中
         irs.append(MV(Register(RegNo.FP), Register(RegNo.SP)))
         # 初始化栈帧
-        if not isinstance(vardefs.var_describes[0], c_ast.FuncVarDescribe):
+        if not isinstance(vardefs.var_describes[0].get_type(), c_type.Func):
             raise Exception('')
-        if vardefs.var_describes[0].body is None:
-            raise Exception('')
+        # if vardefs.var_describes[0].body is None:
+        #     raise Exception('')
         ctx.init_frame_length(vardefs)
         # sp按照当前的栈帧大小对齐后增长
         irs.append(ADDI(Register(RegNo.SP), Register(RegNo.SP), str(-ctx.frame_length)))
         # 把寄存器中的内容复制到栈帧中
         # 具体的执行办法是：a0到a6全部压栈
         # 然后依次出栈到a0
-        for i in range(len(vardefs.var_describes[0].params)):
+        # 然而不是所有的函数定义都以函数描述收场
+        functype = vardefs.var_describes[0].get_type()
+        if not isinstance(functype, c_type.Func):
+            raise Exception('')
+        for i in range(len(functype.args)):
             reg = list(RegNo)[i]
             irs.extend(codegen_ast2ir_reg_push(Register(reg)))
-        for i in range(len(vardefs.var_describes[0].params))[::-1]:
+        for i in range(len(functype.args))[::-1]:
             # 生成变量地址
-            irs.extend(codegen_address(ctx, vardefs.var_describes[0].params[i].var_describes[0].get_name()))
+            irs.extend(codegen_address(ctx, functype.args[i][0]))
             # 将变量地址移动到a1
             irs.append(MV(Register(RegNo.A1), Register(RegNo.A0)))
             irs.extend(codegen_ast2ir_reg_pop(Register(RegNo.A0)))
             # 将变量的值存储到0(a1)中
             # 获取当前param的类型
-            t = vardefs.var_describes[0].params[i].var_describes[0].get_type()
-            # if t is None:
-            #     raise Exception('')
+            t = functype.args[i][1]
             irs.extend(codegen_ast2ir_store(t))
         # 3.生成函数体
         irs.extend(codegen_ast2ir_stmt(ctx, vardefs.var_describes[0].body))
@@ -433,8 +437,8 @@ def codegen_ast2ir_data_emit_str_exp(ctx: CodegenContext, exp: c_ast.Exp) -> lis
 def codegen_ast2ir_data_emit_glbvars(ctx: CodegenContext, vardefs: c_ast.VarDefsStmt) -> list[IR]:
     irs: list[IR] = []
     for vardescribe in vardefs.var_describes:
-        # 不生成 因为没什么好生成的
-        if isinstance(vardescribe, c_ast.FuncVarDescribe) and vardescribe.body is None:
+        # 遇到函数定义或声明时不生成 因为没什么好生成的
+        if isinstance(vardescribe.get_type(), c_type.Func):
             continue
         irs.append(PreOrder('globl', f'{vardescribe.get_name()}'))
         irs.append(Label(f'{vardescribe.get_name()}'))
@@ -889,6 +893,8 @@ def codegen_ast2ir_load(t: c_type.CType) -> list[IR]:
         return [LD(Register(RegNo.A0), '0', Register(RegNo.A0))]
     if t.length() == 4:
         return [LW(Register(RegNo.A0), '0', Register(RegNo.A0))]
+    if t.length() == 2:
+        return [LH(Register(RegNo.A0), '0', Register(RegNo.A0))]
     if t.length() == 1:
         return [LB(Register(RegNo.A0), '0', Register(RegNo.A0))]
     raise Exception('')
@@ -909,6 +915,8 @@ def codegen_ast2ir_store(t: c_type.CType) -> list[IR]:
         return [SD(Register(RegNo.A0), '0', Register(RegNo.A1))]
     if t.length() == 4:
         return [SW(Register(RegNo.A0), '0', Register(RegNo.A1))]
+    if t.length() == 2:
+        return [SH(Register(RegNo.A0), '0', Register(RegNo.A1))]
     if t.length() == 1:
         return [SB(Register(RegNo.A0), '0', Register(RegNo.A1))]
     raise Exception(f'fuck, type is: {t}')
@@ -998,12 +1006,16 @@ def codegen_ir2asm(irs: List[IR]) -> str:
                 code += f"    sd {ir.src.no.name.lower()}, {ir.offset}({ir.base.no.name.lower()})\n"
             elif isinstance(ir, SW):
                 code += f"    sw {ir.src.no.name.lower()}, {ir.offset}({ir.base.no.name.lower()})\n"
+            elif isinstance(ir, SH):
+                code += f"    sh {ir.src.no.name.lower()}, {ir.offset}({ir.base.no.name.lower()})\n"
             elif isinstance(ir, SB):
                 code += f"    sb {ir.src.no.name.lower()}, {ir.offset}({ir.base.no.name.lower()})\n"
             elif isinstance(ir, LD):
                 code += f"    ld {ir.dest.no.name.lower()}, {ir.offset}({ir.base.no.name.lower()})\n"
             elif isinstance(ir, LW):
                 code += f"    lw {ir.dest.no.name.lower()}, {ir.offset}({ir.base.no.name.lower()})\n"
+            elif isinstance(ir, LH):
+                code += f"    lh {ir.dest.no.name.lower()}, {ir.offset}({ir.base.no.name.lower()})\n"
             elif isinstance(ir, LB):
                 code += f"    lb {ir.dest.no.name.lower()}, {ir.offset}({ir.base.no.name.lower()})\n"
             else:

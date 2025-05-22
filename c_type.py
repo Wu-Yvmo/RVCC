@@ -17,7 +17,7 @@ class Void(CType):
         super().__init__()
 
     def length(self) -> int:
-        raise Exception('')
+        raise Exception('should not get length')
     
     def align(self) -> int:
         raise Exception('void do not say')
@@ -87,10 +87,13 @@ class Ary(CType):
         return self.base.align()
     
 class Func(CType):
-    def __init__(self, args: list[CType], ret: CType):
+    def __init__(self, args: list[tuple[str, CType]], ret: CType):
         super().__init__()
         self.args = args
         self.ret = ret
+    
+    def length(self) -> int:
+        raise Exception('func here!')
 
 class CStruct(CType):
     def __init__(self, label: None|str, items: list[tuple[str, CType]]):
