@@ -11,6 +11,7 @@ class CTokenType(Enum):
     KEY_FOR = auto()
     KEY_WHILE = auto()
     KEY_RETURN = auto()
+    KEY__BOOL = auto()
     KEY_LONG = auto()
     KEY_INT = auto()
     KEY_SHORT = auto()

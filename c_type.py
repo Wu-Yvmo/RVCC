@@ -62,6 +62,16 @@ class I8(CType):
     def align(self) -> int:
         return 1
 
+class Bool(CType):
+    def __init__(self):
+        super().__init__()
+
+    def length(self) -> int:
+        return 1
+
+    def align(self) -> int:
+        return 1
+    
 class Ptr(CType):
     def __init__(self, base: CType):
         super().__init__()

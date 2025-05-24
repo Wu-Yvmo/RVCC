@@ -162,6 +162,8 @@ class CodegenContext:
             self.__init_frame_length_exp(exp.func_source)
             for arg in exp.inargs:
                 self.__init_frame_length_exp(arg)
+        elif isinstance(exp, c_ast.CastExp):
+            self.__init_frame_length_exp(exp.exp)
     
     def enter_scope(self, blkstmt: c_ast.BlkStmt):
         self.frame_tracker.append(blkstmt.varinfos)
@@ -832,8 +834,6 @@ def codegen_ast2ir_exp(ctx: CodegenContext, exp: c_ast.Exp) -> list[IR]:
         # 为类型转换生成代码
         # 生成子表达式
         irs = codegen_ast2ir_exp(ctx, exp.exp)
-        # 这真的是正确的转换吗？我感觉不太对
-        # trim+32 trim+16 trim+8 trim-8 trim-16 trim-32
         # 只有从大转小的时候需要额外处理 因为扩增会在寄存器中自动完成
         conv_ir_table: dict[str, list[IR]] = {
             'i64->i32': [
@@ -870,15 +870,27 @@ def codegen_ast2ir_exp(ctx: CodegenContext, exp: c_ast.Exp) -> list[IR]:
         # long -> char
         elif isinstance(exp.cast_to, c_type.I8) and isinstance(exp.exp.type, c_type.I64):
             irs.extend(conv_ir_table['i64->i8'])
+        # long -> _Bool
+        elif isinstance(exp.cast_to, c_type.Bool) and isinstance(exp.exp.type, c_type.I64):
+            irs.append(SNEZ(Register(RegNo.A0), Register(RegNo.A0)))
         # int -> short
         elif isinstance(exp.cast_to, c_type.I16) and isinstance(exp.exp.type, c_type.I32):
             irs.extend(conv_ir_table['i32->i16'])
         # int -> char
         elif isinstance(exp.cast_to, c_type.I8) and isinstance(exp.exp.type, c_type.I32):
             irs.extend(conv_ir_table['i32->i8'])
+        # int -> _Bool
+        elif isinstance(exp.cast_to, c_type.Bool) and isinstance(exp.exp.type, c_type.I32):
+            irs.append(SNEZ(Register(RegNo.A0), Register(RegNo.A0)))
         # short -> char
         elif isinstance(exp.cast_to, c_type.I8) and isinstance(exp.exp.type, c_type.I16):
             irs.extend(conv_ir_table['i16->i8'])
+        # short -> _Bool
+        elif isinstance(exp.cast_to, c_type.Bool) and isinstance(exp.exp.type, c_type.I16):
+            irs.append(SNEZ(Register(RegNo.A0), Register(RegNo.A0)))
+        # char -> _Bool
+        elif isinstance(exp.cast_to, c_type.Bool) and isinstance(exp.exp.type, c_type.I8):
+            irs.append(SNEZ(Register(RegNo.A0), Register(RegNo.A0)))
         return irs
     else:
         raise Exception('')

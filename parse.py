@@ -99,8 +99,8 @@ def parse(raw_tokens: list[ctoken.CToken]) -> list[c_ast.VarDefsStmt]:
         tokens.append(raw_token)
     ctx = ParseContext(tokens)
     ctx.enter_scope()
-    # 在全局变量作用域中添加assert 和 printf
-    ctx.register_var_type('assert', c_type.Func([('', c_type.I64()), ('', c_type.I64()), ('', c_type.Ptr(c_type.I8()))], c_type.Void()))
+    # 在全局变量作用域中添加 assert 和 printf
+    ctx.register_var_type('assert', c_type.Func([('', c_type.I32()), ('', c_type.I32()), ('', c_type.Ptr(c_type.I8()))], c_type.Void()))
     ctx.register_var_type('printf', c_type.Func([('', c_type.Ptr(c_type.I8()))], c_type.Void()))
     vardefs_stmts: list[c_ast.VarDefsStmt] = []
     while not ctx.end():
@@ -250,14 +250,32 @@ def parse_num(ctx: ParseContext) -> c_ast.Exp:
             add_type(ctx, e)
             continue
         # 处理函数调用
+        func_type = e.type
+        if e.type is None or not isinstance(func_type, c_type.Func):
+            raise Exception('')
         ctx.iter()
+        # 解析函数调用
         inargs: list[c_ast.Exp] = []
         while ctx.current().token_type != ctoken.CTokenType.PC_R_ROUND_BRACKET:
             inargs.append(parse_exp_disable_comma(ctx))
             if ctx.current().token_type == ctoken.CTokenType.PC_COMMA:
                 ctx.iter()
+        # 根据函数类型中的入参构造类型转换
+        correct_inargs: list[c_ast.Exp] = []
+        for i in range(len(inargs)):
+            if i >= len(func_type.args):
+                raise Exception(f'{e} {func_type.args}')
+            inarg_t = inargs[i].type
+            if inarg_t is None:
+                raise Exception('')
+            if not c_type.same_type(func_type.args[i][1], inarg_t):
+                new_inarg = c_ast.CastExp(inargs[i], func_type.args[i][1])
+                add_type(ctx, new_inarg)
+                correct_inargs.append(new_inarg)
+            else:
+                correct_inargs.append(inargs[i])
         ctx.iter()
-        e = c_ast.Call(e, inargs)
+        e = c_ast.Call(e, correct_inargs)
         add_type(ctx, e)
     return e
 
@@ -472,15 +490,7 @@ def parse_stmt(ctx: ParseContext) -> c_ast.Stmt:
     result: None|c_ast.Stmt = None
     if ctx.current().token_type == ctoken.CTokenType.PC_L_CURLY_BRACKET:
         result = parse_stmt_blk(ctx)
-    elif ctx.current().token_type == ctoken.CTokenType.KEY_LONG or \
-        ctx.current().token_type == ctoken.CTokenType.KEY_INT or \
-        ctx.current().token_type == ctoken.CTokenType.KEY_SHORT or \
-        ctx.current().token_type == ctoken.CTokenType.KEY_CHAR or \
-        ctx.current().token_type == ctoken.CTokenType.KEY_STRUCT or \
-        ctx.current().token_type == ctoken.CTokenType.KEY_UNION or \
-        ctx.current().token_type == ctoken.CTokenType.KEY_ENUM or \
-        ctx.current().token_type == ctoken.CTokenType.KEY_VOID or \
-        ctx.has_typedef_type(ctx.current().value):
+    elif is_type_prefix(ctx, ctx.current()):
         result = parse_stmt_vardefs(ctx)
     elif ctx.current().token_type == ctoken.CTokenType.KEY_RETURN:
         result = parse_stmt_ret(ctx)
@@ -565,7 +575,8 @@ def is_integer_prefix(ctx: ParseContext, tk: ctoken.CToken) -> bool:
     return t == ctoken.CTokenType.KEY_LONG or \
         t == ctoken.CTokenType.KEY_INT or \
         t == ctoken.CTokenType.KEY_SHORT or \
-        t == ctoken.CTokenType.KEY_CHAR
+        t == ctoken.CTokenType.KEY_CHAR or \
+        t == ctoken.CTokenType.KEY__BOOL
 
 def parse_type(ctx: ParseContext) -> c_type.CType:
     '''
@@ -575,7 +586,7 @@ def parse_type(ctx: ParseContext) -> c_type.CType:
     '''
     if is_integer_prefix(ctx, ctx.current()):
         # 按顺序解析所有的操作空间
-        long_ctr, int_ctr, short_ctr, char_ctr = 0, 0, 0, 0
+        long_ctr, int_ctr, short_ctr, char_ctr, _bool_ctr = 0, 0, 0, 0, 0
         while is_integer_prefix(ctx, ctx.current()):
             t = ctx.current().token_type
             if t == ctoken.CTokenType.KEY_LONG:
@@ -586,6 +597,8 @@ def parse_type(ctx: ParseContext) -> c_type.CType:
                 short_ctr += 1
             elif t == ctoken.CTokenType.KEY_CHAR:
                 char_ctr += 1
+            elif t == ctoken.CTokenType.KEY__BOOL:
+                _bool_ctr += 1
             ctx.iter()
         if long_ctr >= 1:
             return c_type.I64()
@@ -595,6 +608,8 @@ def parse_type(ctx: ParseContext) -> c_type.CType:
             return c_type.I32()
         if char_ctr == 1:
             return c_type.I8()
+        if _bool_ctr == 1:
+            return c_type.Bool()
         raise Exception('not expected')
     if ctx.current().token_type == ctoken.CTokenType.KEY_VOID:
         ctx.iter()
@@ -673,7 +688,15 @@ def neo_parse_vardescribe(ctx: ParseContext, deep_type: c_type.CType, disalbe_ty
     # 对可能出现的赋值进行处理
     if not ctx.end() and ctx.current().token_type == ctoken.CTokenType.OP_ASN:
         ctx.iter()
-        var_describe.init = parse_exp_disable_comma(ctx)
+        # 考虑类型转换。
+        init = parse_exp_disable_comma(ctx)
+        # t 和get_type()的区别是什么？
+        if init.type is None:
+            raise Exception(f'{var_describe} {var_describe.t} {init.type}')
+        if not c_type.same_type(var_describe.get_type(), init.type):
+            init = c_ast.CastExp(init, var_describe.get_type())
+            add_type(ctx, init)
+        var_describe.init = init
         return var_describe
     if not ctx.end() and ctx.current().token_type == ctoken.CTokenType.PC_L_CURLY_BRACKET:
         if not isinstance(var_describe.get_type(), c_type.Func):
@@ -785,7 +808,9 @@ def parse_stmt_ret(ctx: ParseContext) -> c_ast.Stmt:
     value = parse_exp(ctx)
     if ctx.ret_type is None or value.type is None:
         raise Exception('')
-    type_compatibalize(ctx.ret_type, value.type)
+    # 进行类型兼容 有这个必要吗？
+    # type_compatibalize(ctx.ret_type, value.type)
+    # 枚举值进行类型转换的地方有问题
     if not c_type.same_type(ctx.ret_type, value.type):
         value = c_ast.CastExp(value, ctx.ret_type)
         add_type(ctx, value)
