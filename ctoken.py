@@ -20,6 +20,7 @@ class CTokenType(Enum):
     IDENTIFIER = auto()
     NUMBER = auto()
     STRING = auto()
+    LETTER = auto()
     # 赋值
     OP_ASN = auto()
     OP_EQ = auto()

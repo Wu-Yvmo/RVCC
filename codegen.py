@@ -433,6 +433,8 @@ def codegen_ast2ir_data_emit_str_exp(ctx: CodegenContext, exp: c_ast.Exp) -> lis
         irs: list[IR] = []
         irs.extend(codegen_ast2ir_data_emit_str_exp(ctx, exp.exp))
         return irs
+    if isinstance(exp, c_ast.Ltr):
+        return []
     raise Exception('shouldn not run')
 
 # 生成全局变量
@@ -892,6 +894,9 @@ def codegen_ast2ir_exp(ctx: CodegenContext, exp: c_ast.Exp) -> list[IR]:
         elif isinstance(exp.cast_to, c_type.Bool) and isinstance(exp.exp.type, c_type.I8):
             irs.append(SNEZ(Register(RegNo.A0), Register(RegNo.A0)))
         return irs
+    elif isinstance(exp, c_ast.Ltr):
+        result.append(LI(Register(RegNo.A0), str(ord(exp.value[0]))))
+        pass
     else:
         raise Exception('')
     return result

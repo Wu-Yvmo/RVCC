@@ -87,13 +87,15 @@ class Num(Exp):
     def __str__(self) -> str:
         return f'({self.value})'
 
+# 这一步工作是：把Str转换成一个静态方法。
 class Str(Exp):
     def __init__(self, value: str):
         super().__init__()
         # 这里增加一个转义字符适配的步骤
-        self.value = self.__convert_str(value)
+        self.value = self.convert_str(value)
     
-    def __convert_str(self, value: str) -> str:
+    @staticmethod
+    def convert_str(value: str) -> str:
         # 转义字符适配
         after: str = ''
         # a b t n v f r e j k l
@@ -134,9 +136,9 @@ class Str(Exp):
                 # print(f'is hex: {value}')
                 value = value[1:]
                 ctr = 0
-                while len(value) > 0 and self.__is_hexchar(value[0]):
+                while len(value) > 0 and Str.__is_hexchar(value[0]):
                     ctr *= 16
-                    ctr += self.__eval_hexchar(value[0])
+                    ctr += Str.__eval_hexchar(value[0])
                     value = value[1:]
                 after += chr(ctr)
                 continue
@@ -145,19 +147,21 @@ class Str(Exp):
             for _ in range(3):
                 if len(value) == 0:
                     break
-                if not self.__is_octchar(value[0]):
+                if not Str.__is_octchar(value[0]):
                     break
                 ctr *= 8
-                ctr += self.__eval_octchar(value[0])
+                ctr += Str.__eval_octchar(value[0])
                 value = value[1:]
             after += chr(ctr)
         return after
     
-    def __is_hexchar(self, c: str) -> bool:
+    @staticmethod
+    def __is_hexchar(c: str) -> bool:
         v = ord(c)
         return (v >= ord('0') and v <= ord('9')) or (v >= ord('a') and v <= ord('f')) or (v >= ord('A') and v <= ord('F'))
     
-    def __eval_hexchar(self, c: str) -> int:
+    @staticmethod
+    def __eval_hexchar(c: str) -> int:
         v = ord(c)
         if v >= ord('0') and v <= ord('9'):
             return v - ord('0')
@@ -167,15 +171,22 @@ class Str(Exp):
             return v - ord('A') + 10
         raise Exception('')
     
-    def __is_octchar(self, c: str) -> bool:
+    @staticmethod
+    def __is_octchar(c: str) -> bool:
         v = ord(c)
         return v >= ord('0') and v <= ord('7')
     
-    def __eval_octchar(self, c: str) -> int:
+    @staticmethod
+    def __eval_octchar(c: str) -> int:
         v = ord(c)
         if v >= ord('0') and v <= ord('7'):
             return v - ord('0')
         raise Exception('')
+
+class Ltr(Exp):
+    def __init__(self, value: str):
+        super().__init__()
+        self.value = Str.convert_str(value)
 
 class Idt(Exp):
     def __init__(self, idt: ctoken.CToken):

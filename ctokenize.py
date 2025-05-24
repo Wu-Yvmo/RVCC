@@ -54,40 +54,18 @@ def ltrim(code: str) -> str:
         code = code[1:]
     return code
 
-# def tokenize(code: str) -> list[ctoken.CToken]:
-#     tokens: list[ctoken.CToken] = []
-#     code = ltrim(code)
-#     while len(code) > 0:
-#         for pattern in patterns:
-#             result = re.search(pattern[0], code)
-#             if result:
-#                 tokens.append(ctoken.CToken(pattern[1], result.group(0)))
-#                 code = code[len(result.group(0)):]
-#                 code = ltrim(code)
-#                 break
-#     return tokens
-
 def tokenize(code: str) -> list[ctoken.CToken]:
     tokens: list[ctoken.CToken] = []
     code = ltrim(code)
     while len(code) > 0:
-        # 当前为"时选择手动tokenize
+        # 当前为"时选择手动tokenized # 这是一个非常糟糕的决定，真的很糟糕
         if code[0] == '"':
-            content = '"'
-            code = code[1:]
-            # tokenize主逻辑
-            while code[0] != '"':
-                if code[0] == '\\':
-                    content += code[0]
-                    content += code[1]
-                    code = code[2:]
-                    continue
-                content += code[0]
-                code = code[1:]
-            content += '"'
-            tokens.append(ctoken.CToken(ctoken.CTokenType.STRING, content))
-            code = code[1:]
-            code = ltrim(code)
+            tk, code = tokenize_string(code)
+            tokens.append(tk)
+            continue
+        if code[0] == '\'':
+            tk, code = tokenize_letter(code)
+            tokens.append(tk)
             continue
         # 候选，一次轮训扫描会产生多个候选token
         candidates: list[ctoken.CToken] = []
@@ -103,6 +81,44 @@ def tokenize(code: str) -> list[ctoken.CToken]:
         code = code[len(candidates[0].value):]
         code = ltrim(code)
     return tokens
+
+def tokenize_string(code: str) -> tuple[ctoken.CToken, str]:
+    content = '"'
+    code = code[1:]
+    # tokenize主逻辑 可以额外处理\"作为内容的情况
+    while code[0] != '"':
+        if code[0] == '\\':
+            content += code[0]
+            content += code[1]
+            code = code[2:]
+            continue
+        content += code[0]
+        code = code[1:]
+    content += '"'
+    code = code[1:]
+    code = ltrim(code)
+    string_tk = ctoken.CToken(ctoken.CTokenType.STRING, content)
+    return string_tk, code
+
+def tokenize_letter(code: str) -> tuple[ctoken.CToken, str]:
+    content = '\''
+    # 跳过左侧的'
+    code = code[1:]
+    # 读取所有的逻辑
+    while code[0] != '\'':
+        if code[0] == '\\':
+            content += code[0]
+            content += code[1]
+            code = code[2:]
+            continue
+        content += code[0]
+        code = code[1:]
+    content += '\''
+    # 跳过右侧的'
+    code = code[1:]
+    code = ltrim(code)
+    letter_tk = ctoken.CToken(ctoken.CTokenType.LETTER, content)
+    return letter_tk, code
 
 if __name__ == '__main__':
     code = sys.argv[1]

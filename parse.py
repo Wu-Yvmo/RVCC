@@ -170,6 +170,11 @@ def parse_num(ctx: ParseContext) -> c_ast.Exp:
         ctx.iter()
         e = c_ast.Str(t.value[1:len(t.value)-1])
         add_type(ctx, e)
+    elif ctx.current().token_type == ctoken.CTokenType.LETTER:
+        t = ctx.current()
+        ctx.iter()
+        e = c_ast.Ltr(t.value[1:len(t.value)-1])
+        add_type(ctx, e)
     elif ctx.current().token_type == ctoken.CTokenType.PC_L_ROUND_BRACKET:
         ctx.iter()
         if ctx.current().token_type == ctoken.CTokenType.PC_L_CURLY_BRACKET:
@@ -880,6 +885,8 @@ def add_type(ctx: ParseContext, exp: c_ast.Exp):
             exp.type = c_type.I64()
     elif isinstance(exp, c_ast.Str):
         exp.type = c_type.Ary(c_type.I8(), len(exp.value) + 1)
+    elif isinstance(exp, c_ast.Ltr):
+        exp.type = c_type.I8()
     elif isinstance(exp, c_ast.BlkExp):
         if not isinstance(exp.stmt, c_ast.BlkStmt):
             raise Exception('')
