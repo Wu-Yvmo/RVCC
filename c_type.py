@@ -4,7 +4,10 @@ import utils
 class CType:
     def __init__(self):
         super().__init__()
+        # 该字段用于标记类型是否是全局类型 默认不是全局类型
         self.glb = False
+        # 该字段用于标记类型是否是static。默认不是static
+        self.static = False
     
     def length(self) -> int:
         raise Exception('')
@@ -95,7 +98,20 @@ class Ary(CType):
     
     def align(self) -> int:
         return self.base.align()
-    
+
+class Enum(CType):
+    def __init__(self, label: str):
+        super().__init__()
+        self.label = label
+        self.len = 4
+        self.aln = 4
+
+    def length(self) -> int:
+        return self.len
+
+    def align(self) -> int:
+        return self.aln
+
 class Func(CType):
     def __init__(self, args: list[tuple[str, CType]], ret: CType):
         super().__init__()

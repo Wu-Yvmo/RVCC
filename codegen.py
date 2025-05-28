@@ -130,6 +130,13 @@ class CodegenContext:
                 if stmt.f and isinstance(stmt.f, c_ast.BlkStmt):
                     self.__init_frame_length_blkstmt(stmt.f)
             elif isinstance(stmt, c_ast.ForStmt):
+                if isinstance(stmt.init, c_ast.VarDefsStmt):
+                    for varinfo in stmt.varinfos[::-1]:
+                        if varinfo.t is None:
+                            raise Exception('')
+                        self.frame_length += varinfo.t.length()
+                        self.frame_length = utils.align2(self.frame_length, varinfo.t.align())
+                        varinfo.offset = self.frame_length
                 if isinstance(stmt.body, c_ast.BlkStmt):
                     self.__init_frame_length_blkstmt(stmt.body)
             elif isinstance(stmt, c_ast.WhileStmt):
@@ -165,8 +172,8 @@ class CodegenContext:
         elif isinstance(exp, c_ast.CastExp):
             self.__init_frame_length_exp(exp.exp)
     
-    def enter_scope(self, blkstmt: c_ast.BlkStmt):
-        self.frame_tracker.append(blkstmt.varinfos)
+    def enter_scope(self, varinfos: list[varinfo.VarInfo]):
+        self.frame_tracker.append(varinfos)
 
     def exit_scope(self):
         self.frame_tracker.pop()
@@ -176,7 +183,7 @@ class CodegenContext:
             for vi in frame:
                 if vi.name == name:
                     return vi.offset
-        raise Exception('')
+        raise Exception(f'{name} not match')
     
     # ...上文
     # cond求值
@@ -250,11 +257,15 @@ def codegen_ast2ir_code_emit(ctx: CodegenContext, vardefsstmts: list[c_ast.VarDe
             continue
         # 处理函数定义
         ctx.func_name = vardefs.var_describes[0].get_name()
-        # 1.生成全局声明和函数开头
-        irs.extend([
-            PreOrder('globl', vardefs.var_describes[0].get_name()),
-            Label(vardefs.var_describes[0].get_name()),
-        ])
+        # 生成全局声明和函数开头
+        # 如果函数返回值有static修饰 就不提供.globl修饰
+        ft = vardefs.var_describes[0].get_type()
+        if not isinstance(ft, c_type.Func):
+            raise Exception('')
+        # 如果main的ret类型有static修饰 就不生成globl标签
+        if not ft.ret.static:
+            irs.append(PreOrder('globl', vardefs.var_describes[0].get_name()))
+        irs.append(Label(vardefs.var_describes[0].get_name()))
         # 2.生成函数入口的保存操作
         #   ra寄存器压栈
         irs.extend(codegen_ast2ir_reg_push(Register(RegNo.RA)))
@@ -472,7 +483,7 @@ def codegen_ast2ir_expstmt(ctx: CodegenContext, expstmt: c_ast.ExpStmt) -> list[
     return codegen_ast2ir_exp(ctx, expstmt.exp)
 
 def codegen_ast2ir_blkstmt(ctx: CodegenContext, blkstmt: c_ast.BlkStmt) -> list[IR]:
-    ctx.enter_scope(blkstmt)
+    ctx.enter_scope(blkstmt.varinfos)
     irs: list[IR] = []
     for stmt in blkstmt.stmts:
         irs.extend(codegen_ast2ir_stmt(ctx, stmt))
@@ -569,6 +580,7 @@ def codegen_ast2ir_ifstmt(ctx: CodegenContext, ifstmt: c_ast.IfStmt) -> list[IR]
     return irs
 
 def codegen_ast2ir_forstmt(ctx: CodegenContext, forstmt: c_ast.ForStmt) -> list[IR]:
+    ctx.enter_scope(forstmt.varinfos)
     irs: list[IR] = []
     # 1.如果init存在 生成init
     if forstmt.init:
@@ -597,6 +609,7 @@ def codegen_ast2ir_forstmt(ctx: CodegenContext, forstmt: c_ast.ForStmt) -> list[
     irs.append(J(cond))
     # 10.生成end标签
     irs.append(Label(end))
+    ctx.exit_scope()
     return irs
 
 def codegen_ast2ir_whilestmt(ctx: CodegenContext, whilestmt: c_ast.WhileStmt) -> list[IR]:

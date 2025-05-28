@@ -358,6 +358,7 @@ class ForStmt(Stmt):
     def __init__(self, init: None|VarDefsStmt|Exp, cond: None|Exp, step: None|Exp, body: Stmt):
         super().__init__()
         self.init = init
+        self.varinfos: list[varinfo.VarInfo] = []
         self.cond = cond
         self.step = step
         self.body = body

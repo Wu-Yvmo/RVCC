@@ -13,7 +13,6 @@ int main() {
   ASSERT(4, ({ enum { zero, five=5, three=3, four }; four; }));
   ASSERT(4, ({ enum { zero, one, two } x; sizeof(x); }));
   ASSERT(4, ({ enum t { zero, one, two }; enum t y; sizeof(y); }));
-
   printf("OK\n");
   return 0;
 }

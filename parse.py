@@ -13,11 +13,12 @@ class ParseContext:
         self.tokens = tokens
         self.type_tracker: list[dict[str, c_type.CType]] = []
         self.ret_type: c_type.CType|None = None
-        # enum union 和 typedef使用同一个tracker?
+        # enum union 和 typedef使用同一个tracker
         self.struct_label_tracker: list[dict[str, c_type.CType]] = []
-        self.enum_label_tracker: list[dict[str, c_type.CType]] = []
         self.union_label_tracker: list[dict[str, c_type.CType]] = []
         self.typedef_label_tracker: list[dict[str, c_type.CType]] = []
+        # enum 
+        self.enum_tracker: list[dict[str, tuple[str, int]]] = []
     
     def end(self) -> bool:
         return len(self.tokens) == 0
@@ -34,16 +35,16 @@ class ParseContext:
     def enter_scope(self):
         self.type_tracker.append({})
         self.struct_label_tracker.append({})
-        self.enum_label_tracker.append({})
         self.union_label_tracker.append({})
         self.typedef_label_tracker.append({})
+        self.enum_tracker.append({})
 
     def exit_scope(self):
         self.type_tracker.pop()
         self.struct_label_tracker.pop()
-        self.enum_label_tracker.pop()
         self.union_label_tracker.pop()
         self.typedef_label_tracker.pop()
+        self.enum_tracker.pop()
     
     def register_var_type(self, name: str, t: c_type.CType):
         self.type_tracker[-1][name] = t
@@ -85,8 +86,23 @@ class ParseContext:
                 return frame[name]
         raise Exception(f'typedef {name} has no match')
     
+    def register_enum_label(self, name: str, v: int):
+        self.enum_tracker[-1][name] = (name, v)
+        
+    def query_enum_value(self, name: str) -> int:
+        for frame in self.enum_tracker[::-1]:
+            if name in frame:
+                return frame[name][1]
+        raise Exception(f'enum {name} has no match')
+    
     def has_typedef_type(self, name: str) -> bool:
         for frame in self.typedef_label_tracker[::-1]:
+            if name in frame:
+                return True
+        return False
+    
+    def has_enum_label(self, name: str) -> bool:
+        for frame in self.enum_tracker[::-1]:
             if name in frame:
                 return True
         return False
@@ -188,8 +204,13 @@ def parse_num(ctx: ParseContext) -> c_ast.Exp:
     elif ctx.current().token_type == ctoken.CTokenType.IDENTIFIER:
         i = ctx.current()
         ctx.iter()
-        e = c_ast.Idt(i)
-        add_type(ctx, e)
+        # 如果是enum标签 就解析为数字
+        if ctx.has_enum_label(i.value):
+            e = c_ast.Num(ctx.query_enum_value(i.value))
+            add_type(ctx, e)
+        else:
+            e = c_ast.Idt(i)
+            add_type(ctx, e)
     else:
         raise Exception(f'{ctx.current().token_type} {e}')
     # 对函数调用的情况做处理
@@ -242,7 +263,7 @@ def parse_num(ctx: ParseContext) -> c_ast.Exp:
             e = c_ast.BinExp(e, c_ast.BinOp.ACS, c_ast.Idt(want))
             add_type(ctx, e)
             continue
-        # 处理-> 访问操作符
+        # 处理 -> 访问操作符
         if ctx.current().token_type == ctoken.CTokenType.OP_R_ARROW:
             ctx.iter()
             want = ctx.current()
@@ -568,7 +589,9 @@ def is_type_prefix(ctx: ParseContext, tk: ctoken.CToken) -> bool:
         t == ctoken.CTokenType.KEY_VOID or \
         t == ctoken.CTokenType.KEY_STRUCT or \
         t == ctoken.CTokenType.KEY_UNION or \
+        t == ctoken.CTokenType.KEY_ENUM or \
         ctx.has_typedef_type(tk.value)
+        # ctx.has_enum(tk.value)
 
 def is_integer_prefix(ctx: ParseContext, tk: ctoken.CToken) -> bool:
     '''
@@ -583,16 +606,27 @@ def is_integer_prefix(ctx: ParseContext, tk: ctoken.CToken) -> bool:
         t == ctoken.CTokenType.KEY_CHAR or \
         t == ctoken.CTokenType.KEY__BOOL
 
+# 修改方向：提供对static的支持
+# 我要问的是：应当如何对parse_stmt_vardefs提供支持？我们需要把static给添加到VarDescribe的特性中
 def parse_type(ctx: ParseContext) -> c_type.CType:
     '''
     描述：对type进行parse
     param  ctx: 解析上下文
     return 所解析得到的类型
     '''
+    # 对前置的static 进行处理
+    # 在integer中对static进行处理
+    # 在parse结束后对static进行处理
+    # 不需要修改struct 、union 中的static 设定 
+    # 在add_type的时候（也就是计算表达式时完成修改）
+    static_ctr = 0
+    if ctx.current().token_type == ctoken.CTokenType.KEY_STATIC:
+        static_ctr += 1
+        ctx.iter()
     if is_integer_prefix(ctx, ctx.current()):
         # 按顺序解析所有的操作空间
         long_ctr, int_ctr, short_ctr, char_ctr, _bool_ctr = 0, 0, 0, 0, 0
-        while is_integer_prefix(ctx, ctx.current()):
+        while is_integer_prefix(ctx, ctx.current()) or ctx.current().token_type == ctoken.CTokenType.KEY_STATIC:
             t = ctx.current().token_type
             if t == ctoken.CTokenType.KEY_LONG:
                 long_ctr += 1
@@ -604,81 +638,163 @@ def parse_type(ctx: ParseContext) -> c_type.CType:
                 char_ctr += 1
             elif t == ctoken.CTokenType.KEY__BOOL:
                 _bool_ctr += 1
+            elif t == ctoken.CTokenType.KEY_STATIC:
+                static_ctr += 1
             ctx.iter()
         if long_ctr >= 1:
-            return c_type.I64()
+            t = c_type.I64()
+            if static_ctr > 0:
+                t.static = True
+            return t
         if short_ctr == 1:
-            return c_type.I16()
+            t = c_type.I16()
+            if static_ctr > 0:
+                t.static = True
+            return t
         if int_ctr == 1:
-            return c_type.I32()
+            t = c_type.I32()
+            if static_ctr > 0:
+                t.static = True
+            return t
         if char_ctr == 1:
-            return c_type.I8()
+            t = c_type.I8()
+            if static_ctr > 0:
+                t.static = True
+            return t
         if _bool_ctr == 1:
-            return c_type.Bool()
+            t = c_type.Bool()
+            if static_ctr > 0:
+                t.static = True
+            return t
         raise Exception('not expected')
+    # 处理void
     if ctx.current().token_type == ctoken.CTokenType.KEY_VOID:
         ctx.iter()
-        return c_type.Void()
+        t = c_type.Void()
+        # 处理static
+        if ctx.current().token_type == ctoken.CTokenType.KEY_STATIC or static_ctr > 0:
+            t.static = True
+            ctx.iter()
+        return t
+    # 处理struct
     if ctx.current().token_type == ctoken.CTokenType.KEY_STRUCT:
+        # 处理static (未完成)
+        # 读取struct
         ctx.iter()
         label: None|str = None
+        # 读取可能存在的label
         if ctx.current().token_type == ctoken.CTokenType.IDENTIFIER:
             label = ctx.current().value
             ctx.iter()
         items: list[tuple[str, c_type.CType]] = []
-        # 说明我们是要使用已有的struct 而不是构造新的struct
+        # 说明我们是要使用已有的struct 而不是构造新的struct 此时可能是 struct t static
         if ctx.current().token_type != ctoken.CTokenType.PC_L_CURLY_BRACKET:
             if label is None:
                 raise Exception('')
-            return ctx.query_struct_type(label)
+            t = ctx.query_struct_type(label)
+            # 如果当前是static
+            if ctx.current().token_type == ctoken.CTokenType.KEY_STATIC or static_ctr > 0:
+                ctx.iter()
+                t.static = True
+                return t
+            return t
+        # 读取{
         ctx.iter()
-        # 这里的逻辑有问题 我们不知道是要构造新的struct还是使用老的struct
         while ctx.current().token_type != ctoken.CTokenType.PC_R_CURLY_BRACKET:
             vardefsstmt = parse_stmt_vardefs(ctx, disable_frame_injection=True)
             if not isinstance(vardefsstmt, c_ast.VarDefsStmt):
                 raise Exception('')
             for vardescribe in vardefsstmt.var_describes:
                 items.append((vardescribe.get_name(), vardescribe.get_type()))
+        # 读取}
         ctx.iter()
         # 构造结构体类型
         cstruct_t = c_type.CStruct(label, items)
+        # 处理可能遇到的static
+        if ctx.current().token_type == ctoken.CTokenType.KEY_STATIC or static_ctr > 0:
+            cstruct_t.static = True
+            ctx.iter()
         # 存在一个可感知的名称 将label注册到struct的tracker中
         if label is not None:
             ctx.register_struct_label(label, cstruct_t)
         return cstruct_t
+    # 处理union
     if ctx.current().token_type == ctoken.CTokenType.KEY_UNION:
         ctx.iter()
         label: None|str = None
+        # 读取可能存在的union label, 下面会使用它从ctx中索取已有类型
         if ctx.current().token_type == ctoken.CTokenType.IDENTIFIER:
             label = ctx.current().value
             ctx.iter()
-        items: list[tuple[str, c_type.CType]] = []
         # 说明我们是要使用已有的struct 而不是构造新的struct
         if ctx.current().token_type != ctoken.CTokenType.PC_L_CURLY_BRACKET:
             if label is None:
                 raise Exception('')
-            return ctx.query_union_type(label)
+            t = ctx.query_union_type(label)
+            # 处理可能出现的static标识符
+            if ctx.current().token_type == ctoken.CTokenType.KEY_STATIC or static_ctr > 0:
+                ctx.iter()
+                t.static = True
+            return t
+        # 跳过{
         ctx.iter()
-        # 这里的逻辑有问题 我们不知道是要构造新的struct还是使用老的struct
+        items: list[tuple[str, c_type.CType]] = []
         while ctx.current().token_type != ctoken.CTokenType.PC_R_CURLY_BRACKET:
             vardefsstmt = parse_stmt_vardefs(ctx, disable_frame_injection=True)
             if not isinstance(vardefsstmt, c_ast.VarDefsStmt):
                 raise Exception('')
             for vardescribe in vardefsstmt.var_describes:
                 items.append((vardescribe.get_name(), vardescribe.get_type()))
+        # 跳过}
         ctx.iter()
         # 构造结构体类型
         cstruct_t = c_type.CUnion(label, items)
+        # 处理可能遇到的static
+        if ctx.current().token_type == ctoken.CTokenType.KEY_STATIC or static_ctr > 0:
+            cstruct_t.static = True
+            ctx.iter()
         # 存在一个可感知的名称 将label注册到struct的tracker中
         if label is not None:
             ctx.register_union_label(label, cstruct_t)
         return cstruct_t
+    # 处理enum
     if ctx.current().token_type == ctoken.CTokenType.KEY_ENUM:
-        pass
+        # 跳过enum
+        ctx.iter()
+        # 我们不在乎某个enum的名称
+        if ctx.current().token_type == ctoken.CTokenType.IDENTIFIER:
+            ctx.iter()
+        # 没有左花括号 我们是在使用已有的enum
+        if ctx.current().token_type != ctoken.CTokenType.PC_L_CURLY_BRACKET:
+            return c_type.I32()
+        # 解析enum的每个item
+        # 读取{
+        ctx.iter()
+        # enum条目计数器 比较可惜的是 暂时没提供对enum label的支持 思考提供这个功能
+        cur_enum_val = 0
+        while ctx.current().token_type != ctoken.CTokenType.PC_R_CURLY_BRACKET:
+            name = ctx.current().value
+            ctx.iter()
+            if ctx.current().token_type == ctoken.CTokenType.OP_ASN:
+                ctx.iter()
+                cur_enum_val = int(ctx.current().value)
+                ctx.iter()
+            if ctx.current().token_type == ctoken.CTokenType.PC_COMMA:
+                ctx.iter()
+            ctx.register_enum_label(name, cur_enum_val)
+            cur_enum_val += 1
+        # 读取}
+        ctx.iter()
+        return c_type.I32()
     # 没有匹配项 从typedef中找
     cur_tk = ctx.current()
     ctx.iter()
-    return ctx.query_typedef_type(cur_tk.value)
+    t = ctx.query_typedef_type(cur_tk.value)
+    # 处理可能出现的static
+    if ctx.current().token_type == ctoken.CTokenType.KEY_STATIC or static_ctr > 0:
+        t.static = True
+        ctx.iter()
+    return t
 
 def parse_param(ctx: ParseContext) -> c_ast.VarDefsStmt:
     t = parse_type(ctx)
@@ -774,6 +890,7 @@ def neo_parse_vardescribe_suffix(ctx: ParseContext, vardescribe: c_ast.VarDescri
     return vardescribe
 
 def neo_vardescribe_add_type(ctx: ParseContext, vardescribe: c_ast.VarDescribe, deep_type: c_type.CType):
+    # vardescribe是FuncVarDescribe，构造函数类型
     if isinstance(vardescribe, c_ast.FuncVarDescribe):
         # 对函数的参数进行类型解析
         params_type: list[tuple[str, c_type.CType]] = []
@@ -785,12 +902,14 @@ def neo_vardescribe_add_type(ctx: ParseContext, vardescribe: c_ast.VarDescribe, 
         # 对函数的 函数提供源头进行类型解析
         neo_vardescribe_add_type(ctx, vardescribe.vardescribe, deep_type)
         return
+    # vardescribe是数组类型，构造数组类型
     if isinstance(vardescribe, c_ast.AryVarDescribe):
         # 构造数组类型
         deep_type = c_type.Ary(deep_type, vardescribe.length)
         # 对数组修饰的变量进行类型解析
         neo_vardescribe_add_type(ctx, vardescribe.vardescribe, deep_type)
         return
+    # vardescribe是Ptr类型，构造指针类型
     if isinstance(vardescribe, c_ast.PtrVarDescribe):
         # 构造指针类型
         deep_type = c_type.Ptr(deep_type)
@@ -833,32 +952,52 @@ def parse_stmt_if(ctx: ParseContext) -> c_ast.Stmt:
     return c_ast.IfStmt(cond, t, None)
 
 def parse_stmt_for(ctx: ParseContext) -> c_ast.Stmt:
-    # 问题： ltrim会消耗多个token 应当把其他情况下的合理内容变成不合理内容？
+    # 进入作用域
+    ctx.enter_scope()
     # 可以选择修改for的init结构，比如变成VarDefsStmt|Exp|None
+    # 跳过'for'
     ctx.iter()
+    # 跳过(
     ctx.iter()
+    # 解析init. init可以是：1）空 2）VarDefsStmt 3）Exp
     init: None|c_ast.VarDefsStmt|c_ast.Exp = None
     if ctx.current().token_type != ctoken.CTokenType.PC_SEMICOLON:
-        if ctx.current().token_type == ctoken.CTokenType.KEY_INT:
-            tmp = parse_stmt_vardefs(ctx)
-            if not isinstance(tmp, c_ast.VarDefsStmt):
+        # init是VarDefsStmt
+        if is_type_prefix(ctx, ctx.current()):
+            init_vardefs_stmt = parse_stmt_vardefs(ctx)
+            if not isinstance(init_vardefs_stmt, c_ast.VarDefsStmt):
                 raise Exception('')
-            init = tmp
+            init = init_vardefs_stmt
+        # init 是Exp
         else:
             init = parse_exp(ctx)
             ctx.iter()
+    # init 为空. 跳过分号
     else:
         ctx.iter()
+    # 解析cond. cond可以是：1)空 2)Exp
     cond: None|c_ast.Exp = None
     if ctx.current().token_type != ctoken.CTokenType.PC_SEMICOLON:
         cond = parse_exp(ctx)
     ctx.iter()
+    # 解析step. step可以是：1)空 2)Exp
     step: None|c_ast.Exp = None
     if ctx.current().token_type != ctoken.CTokenType.PC_R_ROUND_BRACKET:
         step = parse_exp(ctx)
     ctx.iter()
+    # 解析for的主体部分
     body = parse_stmt(ctx)
-    return c_ast.ForStmt(init, cond, step, body)
+    # 退出作用域
+    ctx.exit_scope()
+    # 构造For的AST
+    for_ast = c_ast.ForStmt(init, cond, step, body)
+    # 将init中所有的变量注册到for_ast的varinfos字段中
+    if not init is None and isinstance(init, c_ast.VarDefsStmt):
+        for vardescribe in init.var_describes:
+            vi = varinfo.VarInfo(vardescribe.get_name())
+            vi.t = vardescribe.get_type()
+            for_ast.varinfos.append(vi)
+    return for_ast
 
 def parse_stmt_while(ctx: ParseContext) -> c_ast.Stmt:
     ctx.iter()

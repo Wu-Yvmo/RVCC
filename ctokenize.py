@@ -3,7 +3,8 @@ import ctoken
 import re
 import sys
 
-patterns = [(r'^typedef', ctoken.CTokenType.KEY_TYPEDEF),
+patterns = [(r'^static', ctoken.CTokenType.KEY_STATIC),
+            (r'^typedef', ctoken.CTokenType.KEY_TYPEDEF),
             (r'^struct', ctoken.CTokenType.KEY_STRUCT),
             (r'^union', ctoken.CTokenType.KEY_UNION),
             (r'^enum', ctoken.CTokenType.KEY_ENUM),
