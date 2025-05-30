@@ -172,6 +172,16 @@ def parse_binop(ctx: ParseContext) -> c_ast.BinOp:
         return c_ast.BinOp.GT
     elif tt == ctoken.CTokenType.OP_GE:
         return c_ast.BinOp.GE
+    elif tt == ctoken.CTokenType.OP_ASN:
+        return c_ast.BinOp.ASN
+    elif tt == ctoken.CTokenType.OP_ADD_ASN:
+        return c_ast.BinOp.ADD_ASN
+    elif tt == ctoken.CTokenType.OP_SUB_ASN:
+        return c_ast.BinOp.SUB_ASN
+    elif tt == ctoken.CTokenType.OP_MUL_ASN:
+        return c_ast.BinOp.MUL_ASN
+    elif tt == ctoken.CTokenType.OP_DIV_ASN:
+        return c_ast.BinOp.DIV_ASN
     raise Exception()
 
 def parse_num(ctx: ParseContext) -> c_ast.Exp:
@@ -483,19 +493,80 @@ def parse_binexp_eq(ctx: ParseContext) -> c_ast.Exp:
         add_type(ctx, l)
     return l
 
+# 现在要引进对+= -= *= /= 的支持
 def parse_binexp_asn(ctx: ParseContext) -> c_ast.Exp:
     l = parse_binexp_eq(ctx)
-    while not ctx.end() and ctx.current().token_type == ctoken.CTokenType.OP_ASN:
-        ctx.iter()
+    while not ctx.end() and ctx.current().token_type == ctoken.CTokenType.OP_ASN or \
+    ctx.current().token_type == ctoken.CTokenType.OP_ADD_ASN or \
+    ctx.current().token_type == ctoken.CTokenType.OP_SUB_ASN or \
+    ctx.current().token_type == ctoken.CTokenType.OP_MUL_ASN or \
+    ctx.current().token_type == ctoken.CTokenType.OP_DIV_ASN:
+        # 相应的 这里的类型处理也需要重构
+        op = parse_binop(ctx)
         r = parse_binexp_asn(ctx)
         if l.type is None or r.type is None:
             raise Exception('')
+        # 讨论：= 和+= -=的不同是什么？= 的类型转换是，右强转到左。+= 的不同是什么？要考虑指针运算的偏移量修改。
+        # int = long -> int = (int)long
+        # ptr += 1 -> ptr += 1 * 8
+        # 我觉得有必要分开处理
         # 如果r的类型和l不相同 则构建类型转换
-        if not c_type.same_type(l.type, r.type):
-            r = c_ast.CastExp(r, l.type)
-            add_type(ctx, r)
-        l = c_ast.BinExp(l, c_ast.BinOp.ASN, r)
-        add_type(ctx, l)
+        if op == c_ast.BinOp.ASN:
+            if not c_type.same_type(l.type, r.type):
+                r = c_ast.CastExp(r, l.type)
+                add_type(ctx, r)
+            l = c_ast.BinExp(l, op, r)
+            add_type(ctx, l)
+        elif op == c_ast.BinOp.ADD_ASN:
+            # 对指针/数组的处理：exp1 += exp2 -> exp1 += exp2 * exp1.base.length()
+            if isinstance(l.type, c_type.Ptr) or isinstance(l.type, c_type.Ary):
+                # 构造 const_length
+                const_length = c_ast.Num(l.type.base.length())
+                add_type(ctx, const_length)
+                # 构造 exp2 * const_length
+                r = c_ast.BinExp(r, c_ast.BinOp.MUL, const_length)
+                # 处理可能需要的类型转换
+                # universal_convert(ctx, r)
+                add_type(ctx, r)
+                # 构造 exp1 += exp2 * const_length
+                l = c_ast.BinExp(l, op, r)
+                add_type(ctx, l)
+            # 常规情况
+            else:
+                # 构造 exp1 += exp2
+                l = c_ast.BinExp(l, op, r)
+                add_type(ctx, l)
+        elif op == c_ast.BinOp.SUB_ASN:
+            # 对指针/数组的处理：exp1 += exp2 -> exp1 += exp2 * exp1.base.length()
+            if isinstance(l.type, c_type.Ptr) or isinstance(l.type, c_type.Ary):
+                # 构造 const_length
+                const_length = c_ast.Num(l.type.base.length())
+                add_type(ctx, const_length)
+                # 构造 exp2 * const_length
+                r = c_ast.BinExp(r, c_ast.BinOp.MUL, const_length)
+                # 处理可能需要的类型转换
+                # universal_convert(ctx, r)
+                add_type(ctx, r)
+                # 构造 exp1 -= exp2 * const_length
+                l = c_ast.BinExp(l, op, r)
+                add_type(ctx, l)
+            # 常规情况
+            else:
+                # 构造 exp1 -= exp2
+                l = c_ast.BinExp(l, op, r)
+                add_type(ctx, l)
+        elif op == c_ast.BinOp.MUL_ASN:
+            # 不存在指针相关的特化。所以直接构造并处理转换。
+            l = c_ast.BinExp(l, op, r)
+            # universal_convert(ctx, l)
+            add_type(ctx, l)
+        elif op == c_ast.BinOp.DIV_ASN:
+            # 不存在指针相关的特化。所以直接构造并处理转换。
+            l = c_ast.BinExp(l, op, r)
+            # universal_convert(ctx, l)
+            add_type(ctx, l)
+        else:
+            raise Exception(f'invalid operator: {op}')
     return l
 
 def parse_binexp_comma(ctx: ParseContext) -> c_ast.Exp:
@@ -1076,7 +1147,7 @@ def add_type(ctx: ParseContext, exp: c_ast.Exp):
         elif (exp.op == c_ast.BinOp.EQ or exp.op == c_ast.BinOp.NE or exp.op == c_ast.BinOp.LT or 
               exp.op == c_ast.BinOp.LE or exp.op == c_ast.BinOp.GT or exp.op == c_ast.BinOp.GE):
             exp.type = c_type.I64()
-        elif exp.op == c_ast.BinOp.ASN:
+        elif exp.op == c_ast.BinOp.ASN or exp.op == c_ast.BinOp.ADD_ASN or exp.op == c_ast.BinOp.SUB_ASN or exp.op == c_ast.BinOp.MUL_ASN or exp.op == c_ast.BinOp.DIV_ASN:
             exp.type = exp.l.type
         elif exp.op == c_ast.BinOp.COMMA:
             exp.type = exp.r.type

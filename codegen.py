@@ -646,6 +646,9 @@ def codegen_ast2ir_reg_pop(reg: Register) -> list[IR]:
 
 # 为变量名和表达式提供寻址
 def codegen_address(ctx: CodegenContext, to_address: str|c_ast.Exp) -> list[IR]:
+    '''
+    描述：生成表达式的地址，存储于A0
+    '''
     # 只有函数入参求值时会用到这个case
     if isinstance(to_address, str):
         irs: List[IR] = []
@@ -695,6 +698,9 @@ def should_use_64bit(t: c_type.CType) -> bool:
     return isinstance(t, c_type.Ptr) or isinstance(t, c_type.Ary) or isinstance(t, c_type.I64)
 
 def codegen_ast2ir_exp(ctx: CodegenContext, exp: c_ast.Exp) -> list[IR]:
+    '''
+    描述：生成表达式的IR
+    '''
     if exp.type is None:
         raise Exception(f'{exp}')
     result: list[IR] = []
@@ -707,7 +713,6 @@ def codegen_ast2ir_exp(ctx: CodegenContext, exp: c_ast.Exp) -> list[IR]:
     elif isinstance(exp, c_ast.BinExp):
         # 赋值表达式单独进行处理
         if exp.op == c_ast.BinOp.ASN:
-            # 任何有左地址的都可以进行赋值运算
             # 1.生成左子表达式的地址
             result.extend(codegen_address(ctx, exp.l))
             # 2.a0压栈
@@ -720,6 +725,110 @@ def codegen_ast2ir_exp(ctx: CodegenContext, exp: c_ast.Exp) -> list[IR]:
             if exp.l.type is None:
                 raise Exception('')
             result.extend(codegen_ast2ir_store(exp.l.type))
+            return result
+        # += 表达式单独处理
+        if exp.op == c_ast.BinOp.ADD_ASN:
+            # 生成右子表达式
+            result.extend(codegen_ast2ir_exp(ctx, exp.r))
+            # 压栈
+            result.extend(codegen_ast2ir_reg_push(Register(RegNo.A0)))
+            # 生成左子表达式的地址
+            result.extend(codegen_address(ctx, exp.l))
+            # 压栈
+            result.extend(codegen_ast2ir_reg_push(Register(RegNo.A0)))
+            # load
+            if exp.l.type is None:
+                raise Exception('')
+            result.extend(codegen_ast2ir_load(exp.l.type))
+            # 出栈到a1
+            result.extend(codegen_ast2ir_reg_pop(Register(RegNo.A1)))
+            result.extend(codegen_ast2ir_reg_pop(Register(RegNo.A2)))
+            # 执行+
+            if should_use_64bit(exp.l.type):
+                result.append(ADD(Register(RegNo.A0), Register(RegNo.A0), Register(RegNo.A2)))
+            else:
+                result.append(ADDW(Register(RegNo.A0), Register(RegNo.A0), Register(RegNo.A2)))
+            # 执行store
+            result.extend(codegen_ast2ir_store(exp.l.type))
+            # 返回处理结果
+            return result
+        # -= 单独处理
+        if exp.op == c_ast.BinOp.SUB_ASN:
+            # 生成右子表达式
+            result.extend(codegen_ast2ir_exp(ctx, exp.r))
+            # 压栈
+            result.extend(codegen_ast2ir_reg_push(Register(RegNo.A0)))
+            # 生成左子表达式的地址
+            result.extend(codegen_address(ctx, exp.l))
+            # 压栈
+            result.extend(codegen_ast2ir_reg_push(Register(RegNo.A0)))
+            # load
+            if exp.l.type is None:
+                raise Exception('')
+            result.extend(codegen_ast2ir_load(exp.l.type))
+            # 出栈到a1
+            result.extend(codegen_ast2ir_reg_pop(Register(RegNo.A1)))
+            result.extend(codegen_ast2ir_reg_pop(Register(RegNo.A2)))
+            # 执行-
+            if should_use_64bit(exp.l.type):
+                result.append(SUB(Register(RegNo.A0), Register(RegNo.A0), Register(RegNo.A2)))
+            else:
+                result.append(SUBW(Register(RegNo.A0), Register(RegNo.A0), Register(RegNo.A2)))
+            # 执行store
+            result.extend(codegen_ast2ir_store(exp.l.type))
+            # 返回处理结果
+            return result
+        # *= 单独处理
+        if exp.op == c_ast.BinOp.MUL_ASN:
+            # 生成右子表达式
+            result.extend(codegen_ast2ir_exp(ctx, exp.r))
+            # 压栈
+            result.extend(codegen_ast2ir_reg_push(Register(RegNo.A0)))
+            # 生成左子表达式的地址
+            result.extend(codegen_address(ctx, exp.l))
+            # 压栈
+            result.extend(codegen_ast2ir_reg_push(Register(RegNo.A0)))
+            # load
+            if exp.l.type is None:
+                raise Exception('')
+            result.extend(codegen_ast2ir_load(exp.l.type))
+            # 出栈到a1
+            result.extend(codegen_ast2ir_reg_pop(Register(RegNo.A1)))
+            result.extend(codegen_ast2ir_reg_pop(Register(RegNo.A2)))
+            # 执行*
+            if should_use_64bit(exp.l.type):
+                result.append(MUL(Register(RegNo.A0), Register(RegNo.A0), Register(RegNo.A2)))
+            else:
+                result.append(MULW(Register(RegNo.A0), Register(RegNo.A0), Register(RegNo.A2)))
+            # 执行store
+            result.extend(codegen_ast2ir_store(exp.l.type))
+            # 返回处理结果
+            return result
+        # /= 单独处理
+        if exp.op == c_ast.BinOp.DIV_ASN:
+            # 生成右子表达式
+            result.extend(codegen_ast2ir_exp(ctx, exp.r))
+            # 压栈
+            result.extend(codegen_ast2ir_reg_push(Register(RegNo.A0)))
+            # 生成左子表达式的地址
+            result.extend(codegen_address(ctx, exp.l))
+            # 压栈
+            result.extend(codegen_ast2ir_reg_push(Register(RegNo.A0)))
+            # load
+            if exp.l.type is None:
+                raise Exception('')
+            result.extend(codegen_ast2ir_load(exp.l.type))
+            # 出栈到a1
+            result.extend(codegen_ast2ir_reg_pop(Register(RegNo.A1)))
+            result.extend(codegen_ast2ir_reg_pop(Register(RegNo.A2)))
+            # 执行/
+            if should_use_64bit(exp.l.type):
+                result.append(DIV(Register(RegNo.A0), Register(RegNo.A0), Register(RegNo.A2)))
+            else:
+                result.append(DIVW(Register(RegNo.A0), Register(RegNo.A0), Register(RegNo.A2)))
+            # 执行store
+            result.extend(codegen_ast2ir_store(exp.l.type))
+            # 返回处理结果
             return result
         if exp.op == c_ast.BinOp.ACS and isinstance(exp.l.type, c_type.CStruct):
             result.extend(codegen_address(ctx, exp))
@@ -783,7 +892,7 @@ def codegen_ast2ir_exp(ctx: CodegenContext, exp: c_ast.Exp) -> list[IR]:
             # 因为执行后的结果是 左子表达式在a0 右子表达式在a1 所以执行一个MV指令
             result.append(MV(Register(RegNo.A0), Register(RegNo.A1)))
         else:
-            raise Exception('')
+            raise Exception(f'{exp.op}')
     elif isinstance(exp, c_ast.UExp):
         # 额外处理 exp和其他的情况 是不是应该在parse阶段就完成sizeof的求值？
         if exp.op == c_ast.UOp.ADD:

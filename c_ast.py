@@ -29,6 +29,10 @@ class BinOp(Enum):
     GT = auto()
     GE = auto()
     ASN = auto()
+    ADD_ASN = auto()
+    SUB_ASN = auto()
+    MUL_ASN = auto()
+    DIV_ASN = auto()
     BITS_AND = auto()
     COMMA = auto()
     # access，访问

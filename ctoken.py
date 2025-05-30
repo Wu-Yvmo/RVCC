@@ -24,6 +24,10 @@ class CTokenType(Enum):
     LETTER = auto()
     # 赋值
     OP_ASN = auto()
+    OP_ADD_ASN = auto()
+    OP_SUB_ASN = auto()
+    OP_MUL_ASN = auto()
+    OP_DIV_ASN = auto()
     OP_EQ = auto()
     OP_NE = auto()
     OP_LT = auto()
