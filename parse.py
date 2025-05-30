@@ -333,10 +333,37 @@ def parse_cast_exp(ctx: ParseContext) -> c_ast.Exp:
 # 解析+ - sizeof
 def parse_uexp(ctx: ParseContext) -> c_ast.Exp:
     # 另外需要考虑sizeof的情况
-    if (ctx.current().token_type == ctoken.CTokenType.OP_ADD or 
-        ctx.current().token_type == ctoken.CTokenType.OP_SUB or 
-        ctx.current().token_type == ctoken.CTokenType.OP_BITS_AND or 
-        ctx.current().token_type == ctoken.CTokenType.OP_MUL):
+    if ctx.current().token_type == ctoken.CTokenType.OP_ADD or \
+        ctx.current().token_type == ctoken.CTokenType.OP_SUB or \
+        ctx.current().token_type == ctoken.CTokenType.OP_BITS_AND or \
+        ctx.current().token_type == ctoken.CTokenType.OP_MUL or \
+        ctx.current().token_type == ctoken.CTokenType.OP_ADD_ADD or \
+        ctx.current().token_type == ctoken.CTokenType.OP_SUB_SUB:
+        # todo: 处理这里的前缀表达式
+        if ctx.current().token_type == ctoken.CTokenType.OP_ADD_ADD:
+            ctx.iter()
+            op = c_ast.BinOp.ADD_ASN
+            sub = parse_uexp(ctx)
+            const_length = c_ast.Num(1)
+            # 指针修正
+            if isinstance(sub.type, c_type.Ptr) or isinstance(sub.type, c_type.Ary):
+                const_length = c_ast.Num(sub.type.base.length())
+            add_type(ctx, const_length)
+            e = c_ast.BinExp(sub, op, const_length)
+            add_type(ctx, e)
+            return e
+        if ctx.current().token_type == ctoken.CTokenType.OP_SUB_SUB:
+            ctx.iter()
+            op = c_ast.BinOp.SUB_ASN
+            sub = parse_uexp(ctx)
+            const_length = c_ast.Num(1)
+            # 指针修正
+            if isinstance(sub.type, c_type.Ptr) or isinstance(sub.type, c_type.Ary):
+                const_length = c_ast.Num(sub.type.base.length())
+            add_type(ctx, const_length)
+            e = c_ast.BinExp(sub, op, const_length)
+            add_type(ctx, e)
+            return e
         bop = parse_binop(ctx)
         uop = c_ast.binop2uop(bop)
         e = c_ast.UExp(uop, parse_uexp(ctx))
