@@ -910,7 +910,6 @@ def codegen_ast2ir_exp(ctx: CodegenContext, exp: c_ast.Exp) -> list[IR]:
         elif exp.op == c_ast.UOp.REF:
             if not isinstance(exp.exp, c_ast.Exp):
                 raise Exception('')
-            result.extend(codegen_ast2ir_exp(ctx, exp.exp))
             result.extend(codegen_address(ctx, exp.exp))
         elif exp.op == c_ast.UOp.DEREF: # 那么问题就在于 任何情况下deref都应当直接load吗
             if not isinstance(exp.exp, c_ast.Exp):

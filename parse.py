@@ -343,13 +343,19 @@ def parse_num(ctx: ParseContext) -> c_ast.Exp:
         add_type(ctx, e)
     return e
 
+# 这里不应该和uexp分开？
+# 和uexp相互调用会有什么问题吗？
 # 解析强制类型转换
 def parse_cast_exp(ctx: ParseContext) -> c_ast.Exp:
     # 需要提供上下文支持 is_type_prefix要重构
     if ctx.current().token_type == ctoken.CTokenType.PC_L_ROUND_BRACKET and is_type_prefix(ctx, ctx.next()):
         # 是类型转换 (type)cast_exp
         ctx.iter()
-        t = parse_type(ctx)
+        # t = parse_type(ctx)
+        t = parse_stmt_vardefs(ctx, disable_frame_injection=True)
+        if not isinstance(t, c_ast.VarDefsStmt):
+            raise Exception('')
+        t = t.var_describes[0].get_type()
         ctx.iter()
         e = parse_cast_exp(ctx)
         e = c_ast.CastExp(e, t)
@@ -371,7 +377,8 @@ def parse_uexp(ctx: ParseContext) -> c_ast.Exp:
         if ctx.current().token_type == ctoken.CTokenType.OP_ADD_ADD:
             ctx.iter()
             op = c_ast.BinOp.ADD_ASN
-            sub = parse_uexp(ctx)
+            # sub = parse_uexp(ctx)
+            sub = parse_cast_exp(ctx)
             const_length = c_ast.Num(1)
             # 指针修正
             if isinstance(sub.type, c_type.Ptr) or isinstance(sub.type, c_type.Ary):
@@ -384,7 +391,8 @@ def parse_uexp(ctx: ParseContext) -> c_ast.Exp:
         if ctx.current().token_type == ctoken.CTokenType.OP_SUB_SUB:
             ctx.iter()
             op = c_ast.BinOp.SUB_ASN
-            sub = parse_uexp(ctx)
+            # sub = parse_uexp(ctx)
+            sub = parse_cast_exp(ctx)
             const_length = c_ast.Num(1)
             # 指针修正
             if isinstance(sub.type, c_type.Ptr) or isinstance(sub.type, c_type.Ary):
@@ -395,7 +403,8 @@ def parse_uexp(ctx: ParseContext) -> c_ast.Exp:
             return e
         bop = parse_binop(ctx)
         uop = c_ast.binop2uop(bop)
-        e = c_ast.UExp(uop, parse_uexp(ctx))
+        # e = c_ast.UExp(uop, parse_uexp(ctx))
+        e = c_ast.UExp(uop, parse_cast_exp(ctx))
         add_type(ctx, e)
         return e
     if ctx.current().token_type == ctoken.CTokenType.KEY_SIZEOF:
@@ -416,7 +425,8 @@ def parse_uexp(ctx: ParseContext) -> c_ast.Exp:
             add_type(ctx, e)
             return e
         # 表达式开头（不是括号开头）
-        e = parse_uexp(ctx)
+        # e = parse_uexp(ctx)
+        e = parse_cast_exp(ctx)
         e = c_ast.UExp(c_ast.UOp.SIZEOF, e)
         add_type(ctx, e)
         return e

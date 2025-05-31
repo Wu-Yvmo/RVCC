@@ -15,7 +15,8 @@ test_items: list[str] = [
     'sizeof',
     'usualconv',
     'literal',
-    'enum'
+    'enum',
+    'cast'
 ]
 
 test_items = test_items[::-1]
