@@ -225,9 +225,11 @@ def parse_num(ctx: ParseContext) -> c_ast.Exp:
         raise Exception(f'{ctx.current().token_type} {e}')
     # 对函数调用的情况做处理
     while ctx.current().token_type == ctoken.CTokenType.PC_L_ROUND_BRACKET or \
-        ctx.current().token_type == ctoken.CTokenType.PC_L_SQUARE_BRACKET or \
-        ctx.current().token_type == ctoken.CTokenType.PC_POINT or \
-        ctx.current().token_type == ctoken.CTokenType.OP_R_ARROW:
+    ctx.current().token_type == ctoken.CTokenType.PC_L_SQUARE_BRACKET or \
+    ctx.current().token_type == ctoken.CTokenType.PC_POINT or \
+    ctx.current().token_type == ctoken.CTokenType.OP_R_ARROW or \
+    ctx.current().token_type == ctoken.CTokenType.OP_ADD_ADD or \
+    ctx.current().token_type == ctoken.CTokenType.OP_SUB_SUB:
         # 数组下标
         if ctx.current().token_type == ctoken.CTokenType.PC_L_SQUARE_BRACKET:
             ctx.iter()
@@ -285,6 +287,32 @@ def parse_num(ctx: ParseContext) -> c_ast.Exp:
             e = c_ast.BinExp(deref, c_ast.BinOp.ACS, c_ast.Idt(want))
             add_type(ctx, e)
             continue
+        # 处理exp++
+        if ctx.current().token_type == ctoken.CTokenType.OP_ADD_ADD:
+            ctx.iter()
+            op = c_ast.BinOp.ADD_ASN
+            const_length = c_ast.Num(1)
+            if isinstance(e.type, c_type.Ptr) or isinstance(e.type, c_type.Ary):
+                const_length = c_ast.Num(e.type.base.length())
+            add_type(ctx, const_length)
+            e = c_ast.BinExp(e, op, const_length)
+            add_type(ctx, e)
+            e = c_ast.BinExp(e, c_ast.BinOp.SUB, const_length)
+            add_type(ctx, e)
+            continue
+        # 处理exp--
+        if ctx.current().token_type == ctoken.CTokenType.OP_SUB_SUB:
+            ctx.iter()
+            op = c_ast.BinOp.SUB_ASN
+            const_length = c_ast.Num(1)
+            if isinstance(e.type, c_type.Ptr) or isinstance(e.type, c_type.Ary):
+                const_length = c_ast.Num(e.type.base.length())
+            add_type(ctx, const_length)
+            e = c_ast.BinExp(e, op, const_length)
+            add_type(ctx, e)
+            e = c_ast.BinExp(e, c_ast.BinOp.ADD, const_length)
+            add_type(ctx, e)
+            continue
         # 处理函数调用
         func_type = e.type
         if e.type is None or not isinstance(func_type, c_type.Func):
@@ -334,12 +362,12 @@ def parse_cast_exp(ctx: ParseContext) -> c_ast.Exp:
 def parse_uexp(ctx: ParseContext) -> c_ast.Exp:
     # 另外需要考虑sizeof的情况
     if ctx.current().token_type == ctoken.CTokenType.OP_ADD or \
-        ctx.current().token_type == ctoken.CTokenType.OP_SUB or \
-        ctx.current().token_type == ctoken.CTokenType.OP_BITS_AND or \
-        ctx.current().token_type == ctoken.CTokenType.OP_MUL or \
-        ctx.current().token_type == ctoken.CTokenType.OP_ADD_ADD or \
-        ctx.current().token_type == ctoken.CTokenType.OP_SUB_SUB:
-        # todo: 处理这里的前缀表达式
+    ctx.current().token_type == ctoken.CTokenType.OP_SUB or \
+    ctx.current().token_type == ctoken.CTokenType.OP_BITS_AND or \
+    ctx.current().token_type == ctoken.CTokenType.OP_MUL or \
+    ctx.current().token_type == ctoken.CTokenType.OP_ADD_ADD or \
+    ctx.current().token_type == ctoken.CTokenType.OP_SUB_SUB:
+        # 处理 ++exp的情况
         if ctx.current().token_type == ctoken.CTokenType.OP_ADD_ADD:
             ctx.iter()
             op = c_ast.BinOp.ADD_ASN
@@ -352,6 +380,7 @@ def parse_uexp(ctx: ParseContext) -> c_ast.Exp:
             e = c_ast.BinExp(sub, op, const_length)
             add_type(ctx, e)
             return e
+        # 处理 --exp的情况
         if ctx.current().token_type == ctoken.CTokenType.OP_SUB_SUB:
             ctx.iter()
             op = c_ast.BinOp.SUB_ASN
