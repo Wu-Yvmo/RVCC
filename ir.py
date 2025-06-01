@@ -126,15 +126,22 @@ class SUBW(Instruction):
         self.src1 = src1
         self.src2 = src2
 
-# 求反
+# 求相反数指令
 class NEG(Instruction):
     def __init__(self, dest: Register, src: Register):
         super().__init__()
         self.dest = dest
         self.src = src
 
-# 求反32位版本
+# 求相反数指令 32位版本
 class NEGW(Instruction):
+    def __init__(self, dest: Register, src: Register):
+        super().__init__()
+        self.dest = dest
+        self.src = src
+
+# 按位求反
+class NOT(Instruction):
     def __init__(self, dest: Register, src: Register):
         super().__init__()
         self.dest = dest

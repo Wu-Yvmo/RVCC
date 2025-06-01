@@ -372,7 +372,9 @@ def parse_uexp(ctx: ParseContext) -> c_ast.Exp:
     ctx.current().token_type == ctoken.CTokenType.OP_BITS_AND or \
     ctx.current().token_type == ctoken.CTokenType.OP_MUL or \
     ctx.current().token_type == ctoken.CTokenType.OP_ADD_ADD or \
-    ctx.current().token_type == ctoken.CTokenType.OP_SUB_SUB:
+    ctx.current().token_type == ctoken.CTokenType.OP_SUB_SUB or \
+    ctx.current().token_type == ctoken.CTokenType.OP_NEG or \
+    ctx.current().token_type == ctoken.CTokenType.OP_BITS_REVERSE:
         # 处理 ++exp的情况
         if ctx.current().token_type == ctoken.CTokenType.OP_ADD_ADD:
             ctx.iter()
@@ -401,9 +403,22 @@ def parse_uexp(ctx: ParseContext) -> c_ast.Exp:
             e = c_ast.BinExp(sub, op, const_length)
             add_type(ctx, e)
             return e
+        # 注意这里的!不是双目运算符，从而需要单独处理
+        if ctx.current().token_type == ctoken.CTokenType.OP_NEG:
+            ctx.iter()
+            e = parse_cast_exp(ctx)
+            e = c_ast.UExp(c_ast.UOp.NEG, e)
+            add_type(ctx, e)
+            return e
+        # 注意这里的~不是双目运算符，从而需要单独处理
+        if ctx.current().token_type == ctoken.CTokenType.OP_BITS_REVERSE:
+            ctx.iter()
+            e = parse_cast_exp(ctx)
+            e = c_ast.UExp(c_ast.UOp.BITS_REVERSE, e)
+            add_type(ctx, e)
+            return e
         bop = parse_binop(ctx)
         uop = c_ast.binop2uop(bop)
-        # e = c_ast.UExp(uop, parse_uexp(ctx))
         e = c_ast.UExp(uop, parse_cast_exp(ctx))
         add_type(ctx, e)
         return e
@@ -1238,7 +1253,11 @@ def add_type(ctx: ParseContext, exp: c_ast.Exp):
             raise Exception('')
         if exp.exp.type is None:
             raise Exception('')
-        if exp.op == c_ast.UOp.ADD:
+        if exp.op == c_ast.UOp.NEG:
+            exp.type = c_type.I32()
+        elif exp.op == c_ast.UOp.BITS_REVERSE:
+            exp.type = exp.exp.type
+        elif exp.op == c_ast.UOp.ADD:
             exp.type = exp.exp.type
         elif exp.op == c_ast.UOp.SUB:
             exp.type = exp.exp.type

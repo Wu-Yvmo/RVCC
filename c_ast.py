@@ -47,6 +47,9 @@ class BinExp(Exp):
         self.r = r
 
 class UOp(Enum):
+    # '~' 按位求反
+    BITS_REVERSE = auto()
+    NEG = auto()
     ADD = auto()
     SUB = auto()
     NOT = auto()

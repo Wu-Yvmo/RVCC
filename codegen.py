@@ -894,8 +894,19 @@ def codegen_ast2ir_exp(ctx: CodegenContext, exp: c_ast.Exp) -> list[IR]:
         else:
             raise Exception(f'{exp.op}')
     elif isinstance(exp, c_ast.UExp):
-        # 额外处理 exp和其他的情况 是不是应该在parse阶段就完成sizeof的求值？
-        if exp.op == c_ast.UOp.ADD:
+        if exp.op == c_ast.UOp.NEG:
+            if not isinstance(exp.exp, c_ast.Exp):
+                raise Exception('')
+            result.extend(codegen_ast2ir_exp(ctx, exp.exp))
+            # seqz
+            result.append(SEQZ(Register(RegNo.A0), Register(RegNo.A0)))
+        elif exp.op == c_ast.UOp.BITS_REVERSE:
+            if not isinstance(exp.exp, c_ast.Exp):
+                raise Exception('')
+            result.extend(codegen_ast2ir_exp(ctx, exp.exp))
+            # 使用not指令求反
+            result.append(NOT(Register(RegNo.A0), Register(RegNo.A0)))
+        elif exp.op == c_ast.UOp.ADD:
             if not isinstance(exp.exp, c_ast.Exp):
                 raise Exception('')
             result.extend(codegen_ast2ir_exp(ctx, exp.exp))
@@ -1118,6 +1129,8 @@ def codegen_ir2asm(irs: List[IR]) -> str:
                 code += f"    neg {ir.dest.no.name.lower()}, {ir.src.no.name.lower()}\n"
             elif isinstance(ir, NEGW):
                 code += f"    negw {ir.dest.no.name.lower()}, {ir.src.no.name.lower()}\n"
+            elif isinstance(ir, NOT):
+                code += f"    not {ir.dest.no.name.lower()}, {ir.src.no.name.lower()}\n"
             elif isinstance(ir, MUL):
                 code += f"    mul {ir.dest.no.name.lower()}, {ir.src1.no.name.lower()}, {ir.src2.no.name.lower()}\n"
             elif isinstance(ir, MULW):
