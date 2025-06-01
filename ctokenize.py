@@ -21,7 +21,14 @@ patterns = [(r'^static', ctoken.CTokenType.KEY_STATIC),
             (r'^char', ctoken.CTokenType.KEY_CHAR),
             (r'^void', ctoken.CTokenType.KEY_VOID),
             (r'^[a-zA-Z_]+[a-zA-Z_0-9]*', ctoken.CTokenType.IDENTIFIER),
-            (r'^[0-9]+', ctoken.CTokenType.NUMBER),
+            # 10进制整型
+            (r'^[1-9][0-9]*', ctoken.CTokenType.NUMBER),
+            # 8进制整型
+            (r'^0[0-9]*', ctoken.CTokenType.NUMBER),
+            # 16进制整型
+            (r'^(0(x|X))[0-9a-fA-F]+', ctoken.CTokenType.NUMBER),
+            # 2进制整型
+            (r'^(0(b|B))[01]+', ctoken.CTokenType.NUMBER),
             # (r'^"((\\\\)|(\\\")|([^\"\\s]))*"', ctoken.CTokenType.STRING), 不用
             (r'^==', ctoken.CTokenType.OP_EQ),
             (r'^!=', ctoken.CTokenType.OP_NE),

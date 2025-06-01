@@ -189,7 +189,7 @@ def parse_num(ctx: ParseContext) -> c_ast.Exp:
     if ctx.current().token_type == ctoken.CTokenType.NUMBER:
         t = ctx.current()
         ctx.iter()
-        e = c_ast.Num(int(t.value))
+        e = c_ast.Num(utils.eval_i(t.value))
         add_type(ctx, e)
     elif ctx.current().token_type == ctoken.CTokenType.STRING:
         t = ctx.current()
