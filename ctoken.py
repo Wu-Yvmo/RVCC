@@ -35,6 +35,8 @@ class CTokenType(Enum):
     OP_MUL_ASN = auto()
     # '/=' 除赋值
     OP_DIV_ASN = auto()
+    # '%=' 求余赋值
+    OP_REM_ASN = auto()
     # '==' 等于运算符
     OP_EQ = auto()
     # '!=' 不等于运算符
@@ -59,6 +61,8 @@ class CTokenType(Enum):
     OP_MUL = auto()
     # '/' 除 运算符
     OP_DIV = auto()
+    # ‘%’ 求余
+    OP_REM = auto()
     # '&' 位与 运算符
     OP_BITS_AND = auto()
     # '->'

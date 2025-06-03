@@ -179,6 +179,22 @@ class DIVW(Instruction):
         self.src1 = src1
         self.src2 = src2
 
+# 指令 %
+class REM(Instruction):
+    def __init__(self, dest: Register, src1: Register, src2: Register):
+        super().__init__()
+        self.dest = dest
+        self.src1 = src1
+        self.src2 = src2
+
+# 指令 %的32位版本
+class REMW(Instruction):
+    def __init__(self, dest: Register, src1: Register, src2: Register):
+        super().__init__()
+        self.dest = dest
+        self.src1 = src1
+        self.src2 = src2
+
 # 指令xor
 class XOR(Instruction):
     def __init__(self, dest: Register, src1: Register, src2: Register):

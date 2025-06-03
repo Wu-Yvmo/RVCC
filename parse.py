@@ -158,6 +158,8 @@ def parse_binop(ctx: ParseContext) -> c_ast.BinOp:
         return c_ast.BinOp.MUL
     elif tt == ctoken.CTokenType.OP_DIV:
         return c_ast.BinOp.DIV
+    elif tt == ctoken.CTokenType.OP_REM:
+        return c_ast.BinOp.REM
     elif tt == ctoken.CTokenType.OP_BITS_AND:
         return c_ast.BinOp.BITS_AND
     elif tt == ctoken.CTokenType.OP_EQ:
@@ -182,6 +184,8 @@ def parse_binop(ctx: ParseContext) -> c_ast.BinOp:
         return c_ast.BinOp.MUL_ASN
     elif tt == ctoken.CTokenType.OP_DIV_ASN:
         return c_ast.BinOp.DIV_ASN
+    elif tt == ctoken.CTokenType.OP_REM_ASN:
+        return c_ast.BinOp.REM_ASN
     raise Exception()
 
 def parse_num(ctx: ParseContext) -> c_ast.Exp:
@@ -451,7 +455,8 @@ def parse_uexp(ctx: ParseContext) -> c_ast.Exp:
 def parse_binexp_mul(ctx: ParseContext) -> c_ast.Exp:
     l = parse_cast_exp(ctx)
     while not ctx.end() and (ctx.current().token_type == ctoken.CTokenType.OP_MUL or 
-                             ctx.current().token_type == ctoken.CTokenType.OP_DIV):
+                             ctx.current().token_type == ctoken.CTokenType.OP_DIV or 
+                             ctx.current().token_type == ctoken.CTokenType.OP_REM):
         op = parse_binop(ctx)
         l = c_ast.BinExp(l, op, parse_cast_exp(ctx))
         universal_convert(ctx, l)
@@ -581,7 +586,8 @@ def parse_binexp_asn(ctx: ParseContext) -> c_ast.Exp:
     ctx.current().token_type == ctoken.CTokenType.OP_ADD_ASN or \
     ctx.current().token_type == ctoken.CTokenType.OP_SUB_ASN or \
     ctx.current().token_type == ctoken.CTokenType.OP_MUL_ASN or \
-    ctx.current().token_type == ctoken.CTokenType.OP_DIV_ASN:
+    ctx.current().token_type == ctoken.CTokenType.OP_DIV_ASN or \
+    ctx.current().token_type == ctoken.CTokenType.OP_REM_ASN:
         # 相应的 这里的类型处理也需要重构
         op = parse_binop(ctx)
         r = parse_binexp_asn(ctx)
@@ -642,6 +648,11 @@ def parse_binexp_asn(ctx: ParseContext) -> c_ast.Exp:
             # universal_convert(ctx, l)
             add_type(ctx, l)
         elif op == c_ast.BinOp.DIV_ASN:
+            # 不存在指针相关的特化。所以直接构造并处理转换。
+            l = c_ast.BinExp(l, op, r)
+            # universal_convert(ctx, l)
+            add_type(ctx, l)
+        elif op == c_ast.BinOp.REM_ASN:
             # 不存在指针相关的特化。所以直接构造并处理转换。
             l = c_ast.BinExp(l, op, r)
             # universal_convert(ctx, l)
@@ -1225,10 +1236,12 @@ def add_type(ctx: ParseContext, exp: c_ast.Exp):
             exp.type = exp.l.type
         elif exp.op == c_ast.BinOp.DIV:
             exp.type = exp.l.type
+        elif exp.op == c_ast.BinOp.REM:
+            exp.type = exp.l.type
         elif (exp.op == c_ast.BinOp.EQ or exp.op == c_ast.BinOp.NE or exp.op == c_ast.BinOp.LT or 
               exp.op == c_ast.BinOp.LE or exp.op == c_ast.BinOp.GT or exp.op == c_ast.BinOp.GE):
             exp.type = c_type.I64()
-        elif exp.op == c_ast.BinOp.ASN or exp.op == c_ast.BinOp.ADD_ASN or exp.op == c_ast.BinOp.SUB_ASN or exp.op == c_ast.BinOp.MUL_ASN or exp.op == c_ast.BinOp.DIV_ASN:
+        elif exp.op == c_ast.BinOp.ASN or exp.op == c_ast.BinOp.ADD_ASN or exp.op == c_ast.BinOp.SUB_ASN or exp.op == c_ast.BinOp.MUL_ASN or exp.op == c_ast.BinOp.DIV_ASN or exp.op == c_ast.BinOp.REM_ASN:
             exp.type = exp.l.type
         elif exp.op == c_ast.BinOp.COMMA:
             exp.type = exp.r.type

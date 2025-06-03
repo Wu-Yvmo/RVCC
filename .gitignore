@@ -175,3 +175,8 @@ cython_debug/
 
 # VSCodeCounter
 .VSCodeCounter/
+
+*.aux
+*.log
+*.pdf
+*.toc

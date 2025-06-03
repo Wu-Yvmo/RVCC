@@ -830,6 +830,32 @@ def codegen_ast2ir_exp(ctx: CodegenContext, exp: c_ast.Exp) -> list[IR]:
             result.extend(codegen_ast2ir_store(exp.l.type))
             # 返回处理结果
             return result
+        # /= 单独处理
+        if exp.op == c_ast.BinOp.REM_ASN:
+            # 生成右子表达式
+            result.extend(codegen_ast2ir_exp(ctx, exp.r))
+            # 压栈
+            result.extend(codegen_ast2ir_reg_push(Register(RegNo.A0)))
+            # 生成左子表达式的地址
+            result.extend(codegen_address(ctx, exp.l))
+            # 压栈
+            result.extend(codegen_ast2ir_reg_push(Register(RegNo.A0)))
+            # load
+            if exp.l.type is None:
+                raise Exception('')
+            result.extend(codegen_ast2ir_load(exp.l.type))
+            # 出栈到a1
+            result.extend(codegen_ast2ir_reg_pop(Register(RegNo.A1)))
+            result.extend(codegen_ast2ir_reg_pop(Register(RegNo.A2)))
+            # 执行%
+            if should_use_64bit(exp.l.type):
+                result.append(REM(Register(RegNo.A0), Register(RegNo.A0), Register(RegNo.A2)))
+            else:
+                result.append(REMW(Register(RegNo.A0), Register(RegNo.A0), Register(RegNo.A2)))
+            # 执行store
+            result.extend(codegen_ast2ir_store(exp.l.type))
+            # 返回处理结果
+            return result
         if exp.op == c_ast.BinOp.ACS and isinstance(exp.l.type, c_type.CStruct):
             result.extend(codegen_address(ctx, exp))
             result.extend(codegen_ast2ir_load(exp.type))
@@ -868,6 +894,11 @@ def codegen_ast2ir_exp(ctx: CodegenContext, exp: c_ast.Exp) -> list[IR]:
                 result.append(DIV(Register(RegNo.A0), Register(RegNo.A0), Register(RegNo.A1)))
             else:
                 result.append(DIVW(Register(RegNo.A0), Register(RegNo.A0), Register(RegNo.A1)))
+        elif exp.op == c_ast.BinOp.REM:
+            if should_use_64bit(exp.type):
+                result.append(REM(Register(RegNo.A0), Register(RegNo.A0), Register(RegNo.A1)))
+            else:
+                result.append(REMW(Register(RegNo.A0), Register(RegNo.A0), Register(RegNo.A1)))
         elif exp.op == c_ast.BinOp.EQ:
             result.append(XOR(Register(RegNo.A0), Register(RegNo.A0), Register(RegNo.A1)))
             result.append(SEQZ(Register(RegNo.A0), Register(RegNo.A0)))
@@ -1139,6 +1170,10 @@ def codegen_ir2asm(irs: List[IR]) -> str:
                 code += f"    div {ir.dest.no.name.lower()}, {ir.src1.no.name.lower()}, {ir.src2.no.name.lower()}\n"
             elif isinstance(ir, DIVW):
                 code += f"    divw {ir.dest.no.name.lower()}, {ir.src1.no.name.lower()}, {ir.src2.no.name.lower()}\n"
+            elif isinstance(ir, REM):
+                code += f"    rem {ir.dest.no.name.lower()}, {ir.src1.no.name.lower()}, {ir.src2.no.name.lower()}\n"
+            elif isinstance(ir, REMW):
+                code += f"    remw {ir.dest.no.name.lower()}, {ir.src1.no.name.lower()}, {ir.src2.no.name.lower()}\n"
             elif isinstance(ir, XOR):
                 code += f"    xor {ir.dest.no.name.lower()}, {ir.src1.no.name.lower()}, {ir.src2.no.name.lower()}\n"
             elif isinstance(ir, XORI):

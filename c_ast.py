@@ -22,6 +22,7 @@ class BinOp(Enum):
     SUB = auto()
     MUL = auto()
     DIV = auto()
+    REM = auto()
     EQ = auto()
     NE = auto()
     LT = auto()
@@ -33,6 +34,7 @@ class BinOp(Enum):
     SUB_ASN = auto()
     MUL_ASN = auto()
     DIV_ASN = auto()
+    REM_ASN = auto()
     BITS_AND = auto()
     COMMA = auto()
     # access，访问
