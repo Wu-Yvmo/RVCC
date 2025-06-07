@@ -160,6 +160,10 @@ def parse_binop(ctx: ParseContext) -> c_ast.BinOp:
         return c_ast.BinOp.DIV
     elif tt == ctoken.CTokenType.OP_REM:
         return c_ast.BinOp.REM
+    elif tt == ctoken.CTokenType.OP_LOGIC_AND:
+        return c_ast.BinOp.LOGIC_AND
+    elif tt == ctoken.CTokenType.OP_LOGIC_OR:
+        return c_ast.BinOp.LOGIC_OR
     elif tt == ctoken.CTokenType.OP_BITS_AND:
         return c_ast.BinOp.BITS_AND
     elif tt == ctoken.CTokenType.OP_BITS_OR:
@@ -576,12 +580,34 @@ def universal_convert(ctx: ParseContext, e: c_ast.Exp):
             e.exp = c_ast.CastExp(e.exp, type_compatible)
             add_type(ctx, e.exp)
 
+def parse_binexp_logic_or(ctx: ParseContext) -> c_ast.Exp:
+    l = parse_binexp_logic_and(ctx)
+    while not ctx.end() and ctx.current().token_type == ctoken.CTokenType.OP_LOGIC_OR:
+        op = parse_binop(ctx)
+        l = c_ast.BinExp(l, op, parse_binexp_logic_and(ctx))
+        # 执行转换的构造 如果有必要
+        universal_convert(ctx, l)
+        # 进行类型提升
+        add_type(ctx, l)
+    return l
+
+def parse_binexp_logic_and(ctx: ParseContext) -> c_ast.Exp:
+    l = parse_binexp_bits_or(ctx)
+    while not ctx.end() and ctx.current().token_type == ctoken.CTokenType.OP_LOGIC_AND:
+        op = parse_binop(ctx)
+        l = c_ast.BinExp(l, op, parse_binexp_bits_or(ctx))
+        # 执行转换的构造 如果有必要
+        universal_convert(ctx, l)
+        # 进行类型提升
+        add_type(ctx, l)
+    return l
+
 def parse_binexp_bits_or(ctx: ParseContext) -> c_ast.Exp:
     l = parse_binexp_bits_xor(ctx)
     while not ctx.end() and ctx.current().token_type == ctoken.CTokenType.OP_BITS_OR:
         op = parse_binop(ctx)
         l = c_ast.BinExp(l, op, parse_binexp_bits_xor(ctx))
-         # 执行转换的构造 如果有必要
+        # 执行转换的构造 如果有必要
         universal_convert(ctx, l)
         # 进行类型提升
         add_type(ctx, l)
@@ -592,7 +618,7 @@ def parse_binexp_bits_xor(ctx: ParseContext) -> c_ast.Exp:
     while not ctx.end() and ctx.current().token_type == ctoken.CTokenType.OP_BITS_XOR:
         op = parse_binop(ctx)
         l = c_ast.BinExp(l, op, parse_binexp_bits_and(ctx))
-         # 执行转换的构造 如果有必要
+        # 执行转换的构造 如果有必要
         universal_convert(ctx, l)
         # 进行类型提升
         add_type(ctx, l)
@@ -603,7 +629,7 @@ def parse_binexp_bits_and(ctx: ParseContext) -> c_ast.Exp:
     while not ctx.end() and ctx.current().token_type == ctoken.CTokenType.OP_BITS_AND:
         op = parse_binop(ctx)
         l = c_ast.BinExp(l, op, parse_binexp_eq(ctx))
-         # 执行转换的构造 如果有必要
+        # 执行转换的构造 如果有必要
         universal_convert(ctx, l)
         # 进行类型提升
         add_type(ctx, l)
@@ -626,7 +652,7 @@ def parse_binexp_eq(ctx: ParseContext) -> c_ast.Exp:
 # and和or和
 # 优先级是：&>^>|
 def parse_binexp_asn(ctx: ParseContext) -> c_ast.Exp:
-    l = parse_binexp_bits_or(ctx)
+    l = parse_binexp_logic_or(ctx)
     while not ctx.end() and ctx.current().token_type == ctoken.CTokenType.OP_ASN or \
     ctx.current().token_type == ctoken.CTokenType.OP_ADD_ASN or \
     ctx.current().token_type == ctoken.CTokenType.OP_SUB_ASN or \
@@ -1327,6 +1353,8 @@ def add_type(ctx: ParseContext, exp: c_ast.Exp):
                 raise Exception('')
         elif exp.op == c_ast.BinOp.BITS_AND or exp.op == c_ast.BinOp.BITS_OR or exp.op == c_ast.BinOp.BITS_XOR:
             exp.type = exp.l.type
+        elif exp.op == c_ast.BinOp.LOGIC_AND or exp.op == c_ast.BinOp.LOGIC_OR:
+            exp.type = c_type.I32()
         else:
             raise Exception(f'unknown operator: {exp.op}')
     elif isinstance(exp, c_ast.UExp):

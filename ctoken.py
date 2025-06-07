@@ -43,6 +43,10 @@ class CTokenType(Enum):
     OP_BITS_OR_ASN = auto()
     # ‘^=’ 位异或赋值
     OP_BITS_XOR_ASN = auto()
+    # '||' 逻辑或运算符
+    OP_LOGIC_OR = auto()
+    # ‘&&’ 逻辑与运算符
+    OP_LOGIC_AND = auto()
     # '==' 等于运算符
     OP_EQ = auto()
     # '!=' 不等于运算符

@@ -38,6 +38,8 @@ class BinOp(Enum):
     BITS_AND_ASN = auto()
     BITS_OR_ASN = auto()
     BITS_XOR_ASN = auto()
+    LOGIC_AND = auto()
+    LOGIC_OR = auto()
     BITS_AND = auto()
     BITS_OR = auto()
     BITS_XOR = auto()

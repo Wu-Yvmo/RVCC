@@ -692,7 +692,7 @@ def codegen_address(ctx: CodegenContext, to_address: str|c_ast.Exp) -> list[IR]:
         # 加 上 成员的 偏移量
         irs.append(ADDI(Register(RegNo.A0), Register(RegNo.A0), str(to_address.l.type.offset(to_address.r.idt.value))))
         return irs
-    raise Exception(f'can not be addressed: {to_address} {to_address.op}')
+    raise Exception(f'can not be addressed: {to_address}')
 
 def should_use_64bit(t: c_type.CType) -> bool:
     return isinstance(t, c_type.Ptr) or isinstance(t, c_type.Ary) or isinstance(t, c_type.I64)
@@ -976,6 +976,12 @@ def codegen_ast2ir_exp(ctx: CodegenContext, exp: c_ast.Exp) -> list[IR]:
             result.append(OR(Register(RegNo.A0), Register(RegNo.A0), Register(RegNo.A1)))
         elif exp.op == c_ast.BinOp.BITS_XOR:
             result.append(XOR(Register(RegNo.A0), Register(RegNo.A0), Register(RegNo.A1)))
+        elif exp.op == c_ast.BinOp.LOGIC_AND:
+            result.append(AND(Register(RegNo.A0), Register(RegNo.A0), Register(RegNo.A1)))
+            result.append(SNEZ(Register(RegNo.A0), Register(RegNo.A0)))
+        elif exp.op == c_ast.BinOp.LOGIC_OR:
+            result.append(OR(Register(RegNo.A0), Register(RegNo.A0), Register(RegNo.A1)))
+            result.append(SNEZ(Register(RegNo.A0), Register(RegNo.A0)))
         elif exp.op == c_ast.BinOp.EQ:
             result.append(XOR(Register(RegNo.A0), Register(RegNo.A0), Register(RegNo.A1)))
             result.append(SEQZ(Register(RegNo.A0), Register(RegNo.A0)))
