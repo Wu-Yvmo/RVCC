@@ -35,7 +35,12 @@ class BinOp(Enum):
     MUL_ASN = auto()
     DIV_ASN = auto()
     REM_ASN = auto()
+    BITS_AND_ASN = auto()
+    BITS_OR_ASN = auto()
+    BITS_XOR_ASN = auto()
     BITS_AND = auto()
+    BITS_OR = auto()
+    BITS_XOR = auto()
     COMMA = auto()
     # access，访问
     ACS = auto()

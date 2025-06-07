@@ -195,6 +195,21 @@ class REMW(Instruction):
         self.src1 = src1
         self.src2 = src2
 
+# 指令and
+class AND(Instruction):
+    def __init__(self, dest: Register, src1: Register, src2: Register):
+        super().__init__()
+        self.dest = dest
+        self.src1 = src1
+        self.src2 = src2
+# 指令or
+class OR(Instruction):
+    def __init__(self, dest: Register, src1: Register, src2: Register):
+        super().__init__()
+        self.dest = dest
+        self.src1 = src1
+        self.src2 = src2
+
 # 指令xor
 class XOR(Instruction):
     def __init__(self, dest: Register, src1: Register, src2: Register):
