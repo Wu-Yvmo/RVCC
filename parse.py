@@ -1100,8 +1100,6 @@ def neo_parse_vardescribe_prefix(ctx: ParseContext) -> c_ast.VarDescribe:
         ctx.iter()
         cur_vardescribe = neo_parse_vardescribe_suffix(ctx, n_vardescribe)
         return cur_vardescribe
-    # 不应该提供ghost?
-    # 不对 应该提供 但是不应该在什么地方提供？
     g_vardescribe = c_ast.GhostVarDescribe(None)
     cur_vardescribe = neo_parse_vardescribe_suffix(ctx, g_vardescribe)
     return cur_vardescribe
@@ -1131,8 +1129,15 @@ def neo_parse_vardescribe_suffix(ctx: ParseContext, vardescribe: c_ast.VarDescri
         func_vardescribe = c_ast.FuncVarDescribe(vardescribe, params, None)
         # 继续解析
         return neo_parse_vardescribe_suffix(ctx, func_vardescribe)
+    # 数组定义
     if ctx.current().token_type == ctoken.CTokenType.PC_L_SQUARE_BRACKET:
         ctx.iter()
+        # 如果是']' 说明是不完整数组 把值设置为-1
+        if ctx.current().token_type == ctoken.CTokenType.PC_R_SQUARE_BRACKET:
+            ctx.iter()
+            ary_vardescribe = c_ast.AryVarDescribe(vardescribe, -1)
+            # 继续解析
+            return neo_parse_vardescribe_suffix(ctx, ary_vardescribe)
         idx = int(ctx.current().value)
         ctx.iter()
         ctx.iter()
