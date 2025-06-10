@@ -276,8 +276,6 @@ def codegen_ast2ir_code_emit(ctx: CodegenContext, vardefsstmts: list[c_ast.VarDe
         # 初始化栈帧
         if not isinstance(vardefs.var_describes[0].get_type(), c_type.Func):
             raise Exception('')
-        # if vardefs.var_describes[0].body is None:
-        #     raise Exception('')
         ctx.init_frame_length(vardefs)
         # sp按照当前的栈帧大小对齐后增长
         irs.append(ADDI(Register(RegNo.SP), Register(RegNo.SP), str(-ctx.frame_length)))

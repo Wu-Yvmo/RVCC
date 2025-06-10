@@ -19,11 +19,8 @@ test_items: list[str] = [
     'cast'
 ]
 
-# 从测试可以看出来，整个类型解析的逻辑是有问题的
-# 
+# 由于我们往往是更关心新增的测试，这里将测试的先后顺序反过来
 test_items = test_items[::-1]
-
-# 也就是说 我们现在要大规模重构整个测试item了
 
 def assert_zero(to_assert: int):
     if to_assert != 0:

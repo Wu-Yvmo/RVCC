@@ -95,6 +95,16 @@ class ParseContext:
                 return frame[name][1]
         raise Exception(f'enum {name} has no match')
     
+    # 我想要实现的功能是，检测是否具有这个struct label
+    def has_struct_label_in_current_frame(self, name: str) -> bool:
+        if name in self.struct_label_tracker[-1]:
+            return True
+        return False 
+        # for frame in self.struct_label_tracker[::-1]:
+        #     if name in frame:
+        #         return True
+        # return False
+    
     def has_typedef_type(self, name: str) -> bool:
         for frame in self.typedef_label_tracker[::-1]:
             if name in frame:
@@ -860,6 +870,10 @@ def is_integer_prefix(ctx: ParseContext, tk: ctoken.CToken) -> bool:
 
 # 修改方向：提供对static的支持
 # 我要问的是：应当如何对parse_stmt_vardefs提供支持？我们需要把static给添加到VarDescribe的特性中
+# 修改方向：提供对不完整Struct的支持
+# 应当有一种名为CStructGhost的类型
+# 但是这就说明在Ghost的求值中必须修改对CStruct的兼容
+# 最好的策略是 先构造一个CStruct结构体出来 然后在parse完成员后对其进行修改
 def parse_type(ctx: ParseContext) -> c_type.CType:
     '''
     描述：对type进行parse
@@ -930,14 +944,25 @@ def parse_type(ctx: ParseContext) -> c_type.CType:
         return t
     # 处理struct
     if ctx.current().token_type == ctoken.CTokenType.KEY_STRUCT:
-        # 处理static (未完成)
-        # 读取struct
+        # 现在要做的工作是，对于struct，要引入不完整Struct的支持
+        # 现在的代码逻辑不对 正常的逻辑是：
+        # 当出现结构体名称的时候，可能要直接使用它，也可能要定义它
+        # 当查不到这个结构体的时候，要先注册一个空的结构体到环境中
+        # 当查得到，而且是定义时，要向这个环境中的结构体添加字段
+        # 处理static
+        # 读取'struct'
         ctx.iter()
         label: None|str = None
         # 读取可能存在的label
         if ctx.current().token_type == ctoken.CTokenType.IDENTIFIER:
             label = ctx.current().value
             ctx.iter()
+        # 出现identifier后，如果此前不存在这个struct标签，就先注册一个空的到ctx中
+        if label is not None:
+            cstruct_t = c_type.CStruct(label, [])
+            # 当前没有这个标签，先注册到环境中
+            if not ctx.has_struct_label_in_current_frame(label):
+                ctx.register_struct_label(label, cstruct_t)
         items: list[tuple[str, c_type.CType]] = []
         # 说明我们是要使用已有的struct 而不是构造新的struct 此时可能是 struct t static
         if ctx.current().token_type != ctoken.CTokenType.PC_L_CURLY_BRACKET:
@@ -950,6 +975,17 @@ def parse_type(ctx: ParseContext) -> c_type.CType:
                 t.static = True
                 return t
             return t
+        # 如果要定义一个结构体类型，先注册一个空的Struct到环境中
+        # if label is not None:
+        #     ctx.register_struct_label(label, cstruct_t)
+        # 这里需要特殊处理。如果struct有名字，我们就需要把空的cstruct_t从环境中给重新查出来
+        # 是这个问题吗？
+        # 如果没有名字，那么我们直接使用空的CStruct 如果有名字 我们从ctx中求一个CStruct出来
+        cstruct_t = None
+        if label is not None:
+            cstruct_t = ctx.query_struct_type(label)
+        else:
+            cstruct_t = c_type.CStruct(label, [])
         # 读取{
         ctx.iter()
         while ctx.current().token_type != ctoken.CTokenType.PC_R_CURLY_BRACKET:
@@ -961,14 +997,18 @@ def parse_type(ctx: ParseContext) -> c_type.CType:
         # 读取}
         ctx.iter()
         # 构造结构体类型
-        cstruct_t = c_type.CStruct(label, items)
+        if not isinstance(cstruct_t, c_type.CStruct):
+            raise Exception('')
+        cstruct_t.load_content(items)
+        # cstruct_t = c_type.CStruct(label, items)
         # 处理可能遇到的static
         if ctx.current().token_type == ctoken.CTokenType.KEY_STATIC or static_ctr > 0:
             cstruct_t.static = True
             ctx.iter()
         # 存在一个可感知的名称 将label注册到struct的tracker中
-        if label is not None:
-            ctx.register_struct_label(label, cstruct_t)
+        # if label is not None:
+        #     ctx.register_struct_label(label, cstruct_t)
+        # 注册逻辑还是有bug.稍后处理.
         return cstruct_t
     # 处理union
     if ctx.current().token_type == ctoken.CTokenType.KEY_UNION:
@@ -1048,16 +1088,22 @@ def parse_type(ctx: ParseContext) -> c_type.CType:
         ctx.iter()
     return t
 
+# 解析一个参数
 def parse_param(ctx: ParseContext) -> c_ast.VarDefsStmt:
     t = parse_type(ctx)
-    vardescribes: list[c_ast.VarDescribe] = [neo_parse_vardescribe(ctx, t)]
+    vardescribes: list[c_ast.VarDescribe] = [neo_parse_vardescribe(ctx, t, work_in_param_mode=True)]
     return c_ast.VarDefsStmt(t, vardescribes)
 
-def neo_parse_vardescribe(ctx: ParseContext, deep_type: c_type.CType, disalbe_type_register: bool = False) -> c_ast.VarDescribe:
+def neo_parse_vardescribe(ctx: ParseContext, deep_type: c_type.CType, disalbe_type_register: bool = False, work_in_param_mode: bool = False) -> c_ast.VarDescribe:
     var_describe = neo_parse_vardescribe_prefix(ctx)
     neo_vardescribe_add_type(ctx, var_describe, deep_type)
+    # 没有被禁止变量注册
+    # 怀疑是这里有问题 写一个测试用的代码
     if not disalbe_type_register:
-        ctx.register_var_type(var_describe.get_name(), var_describe.get_type())
+        param_type = var_describe.get_type()
+        if isinstance(param_type, c_type.Ary) and work_in_param_mode:
+            param_type = c_type.Ptr(param_type.base) 
+        ctx.register_var_type(var_describe.get_name(), param_type)
     # 对可能出现的赋值进行处理
     if not ctx.end() and ctx.current().token_type == ctoken.CTokenType.OP_ASN:
         ctx.iter()
@@ -1153,7 +1199,12 @@ def neo_vardescribe_add_type(ctx: ParseContext, vardescribe: c_ast.VarDescribe, 
         params_type: list[tuple[str, c_type.CType]] = []
         for param in vardescribe.params:
             neo_vardescribe_add_type(ctx, param.var_describes[0], param.btype)
-            params_type.append((param.var_describes[0].get_name(), param.var_describes[0].get_type()))
+            param_type = param.var_describes[0].get_type()
+            # 思考：这里进行转换的位置是正确的吗？
+            if isinstance(param_type, c_type.Ary):
+                param_type = c_type.Ptr(param_type.base)
+            # 这里有问题。传递数组后，返回的结果显然是数组的长度。这不合理。
+            params_type.append((param.var_describes[0].get_name(), param_type))
         # 构造函数签名
         deep_type = c_type.Func(params_type, deep_type)
         # 对函数的 函数提供源头进行类型解析

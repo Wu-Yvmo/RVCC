@@ -129,6 +129,20 @@ class CStruct(CType):
         self.len = 0
         self.aln = 1
         self.items: dict[str, tuple[CType, int]] = {}
+        self.load_content(items)
+        # for item in items:
+        #     # 将当前偏移量对齐到本元素的偏移量
+        #     self.len = utils.align2(self.len, item[1].align())
+        #     self.items[item[0]] = (item[1], self.len)
+        #     self.len += item[1].length()
+        #     # 更新align
+        #     if self.aln < item[1].align():
+        #         self.aln = item[1].align()
+        # # 将结构体的长度对齐到结构体的对齐数
+        # self.len = utils.align2(self.len, self.aln)
+    
+    # 加载成员. 之所以把这个逻辑独立出来是为了让结构体能够以Ghost的形式存在
+    def load_content(self, items: list[tuple[str, CType]]):
         for item in items:
             # 将当前偏移量对齐到本元素的偏移量
             self.len = utils.align2(self.len, item[1].align())
@@ -139,7 +153,7 @@ class CStruct(CType):
                 self.aln = item[1].align()
         # 将结构体的长度对齐到结构体的对齐数
         self.len = utils.align2(self.len, self.aln)
-    
+
     def length(self) -> int:
         return self.len
     
@@ -152,6 +166,12 @@ class CStruct(CType):
     
     def align(self) -> int:
         return self.aln
+
+# 幽灵结构体 在结构体没有完成定义时使用 为了让结构体内部的成员
+# 得以访问自己.
+class CStructGhost(CType):
+    def __init__(self, label: str):
+        pass
 
 class CUnion(CType):
     def __init__(self, label: None|str, items: list[tuple[str, CType]]):
