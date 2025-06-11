@@ -790,10 +790,26 @@ def parse_stmt(ctx: ParseContext) -> c_ast.Stmt:
         result = parse_stmt_while(ctx)
     elif ctx.current().token_type == ctoken.CTokenType.KEY_TYPEDEF:
         result = parse_stmt_typedef(ctx)
+    elif ctx.current().token_type == ctoken.CTokenType.KEY_GOTO:
+        result = parse_stmt_goto(ctx)
+    elif ctx.current().token_type == ctoken.CTokenType.IDENTIFIER and ctx.next().token_type == ctoken.CTokenType.PC_COLON:
+        result = parse_stmt_code_tag(ctx)
     else:
         result = parse_stmt_exp(ctx)
     ltrim(ctx)
     return result
+
+def parse_stmt_code_tag(ctx: ParseContext) -> c_ast.Stmt:
+    tag = c_ast.CodeTag(ctx.current().value)
+    ctx.iter()
+    ctx.iter()
+    return tag
+
+def parse_stmt_goto(ctx: ParseContext) -> c_ast.Stmt:
+    ctx.iter()
+    goto = c_ast.GoToStmt(ctx.current().value)
+    ctx.iter()
+    return goto
 
 def parse_stmt_exp(ctx: ParseContext) -> c_ast.Stmt:
     stmt_exp = c_ast.ExpStmt(parse_exp(ctx))
@@ -982,6 +998,8 @@ def parse_type(ctx: ParseContext) -> c_type.CType:
         # 是这个问题吗？
         # 如果没有名字，那么我们直接使用空的CStruct 如果有名字 我们从ctx中求一个CStruct出来
         cstruct_t = None
+        # 如果是匿名结构体，则直接构造一个空结构体
+        # 如果有名字，则说明现在要正式对结构体添加定义
         if label is not None:
             cstruct_t = ctx.query_struct_type(label)
         else:

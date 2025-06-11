@@ -11,6 +11,15 @@ class Stmt:
     def __init__(self):
         super().__init__()
 
+class CodeTag(Stmt):
+    def __init__(self, tag: str):
+        super().__init__()
+        self.tag = tag
+
+class GoToStmt(Stmt):
+    def __init__(self, dest: str):
+        self.dest = dest
+
 @dataclass
 class Exp:
     def __init__(self):
