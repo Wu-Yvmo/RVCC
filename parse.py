@@ -776,7 +776,9 @@ def ltrim(ctx: ParseContext):
 def parse_stmt(ctx: ParseContext) -> c_ast.Stmt:
     ltrim(ctx)
     result: None|c_ast.Stmt = None
-    if ctx.current().token_type == ctoken.CTokenType.PC_L_CURLY_BRACKET:
+    if ctx.current().token_type == ctoken.CTokenType.IDENTIFIER and ctx.next().token_type == ctoken.CTokenType.PC_COLON:
+        result = parse_stmt_code_tag(ctx)
+    elif ctx.current().token_type == ctoken.CTokenType.PC_L_CURLY_BRACKET:
         result = parse_stmt_blk(ctx)
     elif is_type_prefix(ctx, ctx.current()):
         result = parse_stmt_vardefs(ctx)
@@ -792,8 +794,6 @@ def parse_stmt(ctx: ParseContext) -> c_ast.Stmt:
         result = parse_stmt_typedef(ctx)
     elif ctx.current().token_type == ctoken.CTokenType.KEY_GOTO:
         result = parse_stmt_goto(ctx)
-    elif ctx.current().token_type == ctoken.CTokenType.IDENTIFIER and ctx.next().token_type == ctoken.CTokenType.PC_COLON:
-        result = parse_stmt_code_tag(ctx)
     else:
         result = parse_stmt_exp(ctx)
     ltrim(ctx)
