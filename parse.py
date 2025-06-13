@@ -100,10 +100,6 @@ class ParseContext:
         if name in self.struct_label_tracker[-1]:
             return True
         return False 
-        # for frame in self.struct_label_tracker[::-1]:
-        #     if name in frame:
-        #         return True
-        # return False
     
     def has_typedef_type(self, name: str) -> bool:
         for frame in self.typedef_label_tracker[::-1]:
@@ -777,27 +773,50 @@ def parse_stmt(ctx: ParseContext) -> c_ast.Stmt:
     ltrim(ctx)
     result: None|c_ast.Stmt = None
     if ctx.current().token_type == ctoken.CTokenType.IDENTIFIER and ctx.next().token_type == ctoken.CTokenType.PC_COLON:
+        # 解析标签
         result = parse_stmt_code_tag(ctx)
     elif ctx.current().token_type == ctoken.CTokenType.PC_L_CURLY_BRACKET:
+        # 解析Block
         result = parse_stmt_blk(ctx)
     elif is_type_prefix(ctx, ctx.current()):
+        # 解析定义
         result = parse_stmt_vardefs(ctx)
     elif ctx.current().token_type == ctoken.CTokenType.KEY_RETURN:
+        # 解析return
         result = parse_stmt_ret(ctx)
     elif ctx.current().token_type == ctoken.CTokenType.KEY_IF:
+        # 解析if
         result = parse_stmt_if(ctx)
     elif ctx.current().token_type == ctoken.CTokenType.KEY_FOR:
+        # 解析for
         result = parse_stmt_for(ctx)
     elif ctx.current().token_type == ctoken.CTokenType.KEY_WHILE:
+        # 解析while
         result = parse_stmt_while(ctx)
     elif ctx.current().token_type == ctoken.CTokenType.KEY_TYPEDEF:
+        # 解析typedef
         result = parse_stmt_typedef(ctx)
     elif ctx.current().token_type == ctoken.CTokenType.KEY_GOTO:
+        # 解析goto
         result = parse_stmt_goto(ctx)
+    elif ctx.current().token_type == ctoken.CTokenType.KEY_BREAK:
+        # 解析break
+        result = parse_stmt_break(ctx)
+    elif ctx.current().token_type == ctoken.CTokenType.KEY_CONTINUE:
+        # 解析continue
+        result = parse_stmt_continue(ctx)
     else:
         result = parse_stmt_exp(ctx)
     ltrim(ctx)
     return result
+
+def parse_stmt_break(ctx: ParseContext) -> c_ast.Stmt:
+    ctx.iter()
+    return c_ast.BreakStmt()
+
+def parse_stmt_continue(ctx: ParseContext) -> c_ast.Stmt:
+    ctx.iter()
+    return c_ast.ContinueStmt()
 
 def parse_stmt_code_tag(ctx: ParseContext) -> c_ast.Stmt:
     tag = c_ast.CodeTag(ctx.current().value)

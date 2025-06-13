@@ -1,6 +1,8 @@
 from enum import Enum, auto
 
 class CTokenType(Enum):
+    KEY_BREAK = auto()
+    KEY_CONTINUE = auto()
     KEY_GOTO = auto()
     KEY_STATIC = auto()
     KEY_STRUCT = auto()

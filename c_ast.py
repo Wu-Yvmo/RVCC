@@ -11,6 +11,14 @@ class Stmt:
     def __init__(self):
         super().__init__()
 
+class BreakStmt(Stmt):
+    def __init__(self):
+        super().__init__()
+
+class ContinueStmt(Stmt):
+    def __init__(self):
+        super().__init__()
+
 class CodeTag(Stmt):
     def __init__(self, tag: str):
         super().__init__()

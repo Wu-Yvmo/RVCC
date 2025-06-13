@@ -88,6 +88,10 @@ class CodegenContext:
         self.str_labels: dict[str, str] = {}
         # 字符串计数器
         self.str_counter = 0
+        # break的入口标签
+        self.break_labels: list[str] = []
+        # continue的入口标签
+        self.continue_labels: list[str] = []
     
     def init_frame_length(self, vardefs: c_ast.VarDefsStmt):
         # 现在是对整个函数进行初始化
@@ -227,7 +231,12 @@ class CodegenContext:
         '''
         for_ctr = self.for_counter
         self.for_counter += 1
-        return (f'.L.for.{for_ctr}.cond', f'.L.for.{for_ctr}.step', f'.L.for.{for_ctr}.end')
+        for_labels = (f'.L.for.{for_ctr}.cond', f'.L.for.{for_ctr}.step', f'.L.for.{for_ctr}.end')
+        # 将.L.for.{for_ctr}.end标签添加到break_labels的末尾
+        self.break_labels.append(for_labels[2])
+        # 将.L.for.{for_ctr}.step标签添加到continue_labels的末尾
+        self.continue_labels.append(for_labels[1])
+        return for_labels
 
     # while的continue跳转到.L.while.{ctr}.cond
     # while 的break跳转到.L.while.{ctr}.end
@@ -246,7 +255,12 @@ class CodegenContext:
         '''
         while_ctr = self.while_counter
         self.while_counter += 1
-        return (f'.L.while.{while_ctr}.cond', f'.L.while.{while_ctr}.end')
+        while_labels = (f'.L.while.{while_ctr}.cond', f'.L.while.{while_ctr}.end')
+        # 将.L.while.{while_ctr}.end标签添加到break_labels的末尾
+        self.break_labels.append(while_labels[1])
+        # 将.L.while.{while_ctr}.cond标签添加到continue_labels的末尾
+        self.continue_labels.append(while_labels[0])
+        return while_labels
 
 # 函数定义的代码生成
 def codegen_ast2ir_code_emit(ctx: CodegenContext, vardefsstmts: list[c_ast.VarDefsStmt]) -> list[IR]:
@@ -337,6 +351,10 @@ def codegen_ast2ir_data_emit_str_stmt(ctx: CodegenContext, stmt: c_ast.Stmt) -> 
     elif isinstance(stmt, c_ast.CodeTag):
         return []
     elif isinstance(stmt, c_ast.GoToStmt):
+        return []
+    elif isinstance(stmt, c_ast.BreakStmt):
+        return []
+    elif isinstance(stmt, c_ast.ContinueStmt):
         return []
     raise Exception('')
 
@@ -483,6 +501,10 @@ def codegen_ast2ir_stmt(ctx: CodegenContext, stmt: c_ast.Stmt) -> list[IR]:
         return [Label(stmt.tag)]
     elif isinstance(stmt, c_ast.GoToStmt):
         return [J(stmt.dest)]
+    elif isinstance(stmt, c_ast.BreakStmt):
+        return [J(ctx.break_labels[-1])]
+    elif isinstance(stmt, c_ast.ContinueStmt):
+        return [J(ctx.continue_labels[-1])]
     raise Exception('')
 
 def codegen_ast2ir_expstmt(ctx: CodegenContext, expstmt: c_ast.ExpStmt) -> list[IR]:
@@ -616,6 +638,9 @@ def codegen_ast2ir_forstmt(ctx: CodegenContext, forstmt: c_ast.ForStmt) -> list[
     # 10.生成end标签
     irs.append(Label(end))
     ctx.exit_scope()
+    # 对break和continue标签退栈
+    ctx.break_labels.pop()
+    ctx.continue_labels.pop()
     return irs
 
 def codegen_ast2ir_whilestmt(ctx: CodegenContext, whilestmt: c_ast.WhileStmt) -> list[IR]:
@@ -634,6 +659,9 @@ def codegen_ast2ir_whilestmt(ctx: CodegenContext, whilestmt: c_ast.WhileStmt) ->
     irs.append(J(cond))
     # 7.生成end标签
     irs.append(Label(end))
+    # 对fbreak和continue入口标签退栈
+    ctx.break_labels.pop()
+    ctx.continue_labels.pop()
     return irs
 
 # 寄存器入栈

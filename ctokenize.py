@@ -3,7 +3,9 @@ import ctoken
 import re
 import sys
 
-patterns = [(r'^goto', ctoken.CTokenType.KEY_GOTO),
+patterns = [(r'^break', ctoken.CTokenType.KEY_BREAK),
+    (r'^continue', ctoken.CTokenType.KEY_CONTINUE),
+    (r'^goto', ctoken.CTokenType.KEY_GOTO),
     (r'^static', ctoken.CTokenType.KEY_STATIC),
     (r'^typedef', ctoken.CTokenType.KEY_TYPEDEF),
     (r'^struct', ctoken.CTokenType.KEY_STRUCT),
