@@ -414,6 +414,26 @@ class TypedefStmt(Stmt):
 # 对后续工作进行一些讨论。统一使用VarDefs表示变量定义、声明和函数定义
 # 对数据结构要进行修改
 
+class Case:
+    def __init__(self, cond: int, stmts: list[Stmt]):
+        self.cond = cond
+        self.stmts = stmts
+
+class Default:
+    def __init__(self, stmts: list[Stmt]):
+        self.stmts = stmts
+
+# switch的抽象
+# 包含：1.可选的default 2.一组case
+class SwitchStmt(Stmt):
+    def __init__(self, cond: Exp, cases: list[Case], default: Default|None):
+        # switch 条件
+        self.cond = cond
+        # switch cases
+        self.cases = cases
+        # switch default
+        self.default = default
+
 if __name__ == '__main__':
     print(RegNo.A0 + 1 == RegNo.A1)
     reg = RegNo.A0 + 1

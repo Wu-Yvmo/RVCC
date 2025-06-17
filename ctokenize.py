@@ -3,7 +3,10 @@ import ctoken
 import re
 import sys
 
-patterns = [(r'^break', ctoken.CTokenType.KEY_BREAK),
+patterns = [(r'^switch', ctoken.CTokenType.KEY_SWITCH),
+    (r'^case', ctoken.CTokenType.KEY_CASE),
+    (r'^default', ctoken.CTokenType.KEY_DEFAULT),
+    (r'^break', ctoken.CTokenType.KEY_BREAK),
     (r'^continue', ctoken.CTokenType.KEY_CONTINUE),
     (r'^goto', ctoken.CTokenType.KEY_GOTO),
     (r'^static', ctoken.CTokenType.KEY_STATIC),
@@ -32,7 +35,7 @@ patterns = [(r'^break', ctoken.CTokenType.KEY_BREAK),
     (r'^(0(x|X))[0-9a-fA-F]+', ctoken.CTokenType.NUMBER),
     # 2进制整型
     (r'^(0(b|B))[01]+', ctoken.CTokenType.NUMBER),
-    # (r'^"((\\\\)|(\\\")|([^\"\\s]))*"', ctoken.CTokenType.STRING), 不用
+    # (r'^"((\\\\)|(\\\")|([^\"\\s]))*"', ctoken.CTokenType.STRING), 不用 我们选择手动扫描
     (r'^==', ctoken.CTokenType.OP_EQ),
     (r'^!=', ctoken.CTokenType.OP_NE),
     (r'^<=', ctoken.CTokenType.OP_LE),
@@ -98,7 +101,7 @@ def tokenize(code: str) -> list[ctoken.CToken]:
             tk, code = tokenize_letter(code)
             tokens.append(tk)
             continue
-        # 候选，一次轮训扫描会产生多个候选token
+        # 候选，一次轮询扫描会产生多个候选token
         candidates: list[ctoken.CToken] = []
         for pattern in patterns:
             result = re.search(pattern[0], code)

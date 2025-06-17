@@ -92,7 +92,10 @@ class CodegenContext:
         self.break_labels: list[str] = []
         # continue的入口标签
         self.continue_labels: list[str] = []
+        # switch标号的计数器
+        self.switch_counter = 0
     
+    # 整个栈帧初始化的逻辑有很大的问题
     def init_frame_length(self, vardefs: c_ast.VarDefsStmt):
         # 现在是对整个函数进行初始化
         # 要对传入的参数也进行编址
@@ -114,6 +117,63 @@ class CodegenContext:
         # 2.对齐栈长度为16字节
         # （暂时未实现）
         raise Exception('')
+    
+    def __init_frame_length_stmt(self, stmt: c_ast.Stmt):
+        if isinstance(stmt, c_ast.BlkStmt):
+            self.__init_frame_length_blkstmt(stmt)
+        elif isinstance(stmt, c_ast.IfStmt):
+            self.__init_frame_length_ifstmt(stmt)
+        elif isinstance(stmt, c_ast.ForStmt):
+            self.__init_frame_length_forstmt(stmt)
+        elif isinstance(stmt, c_ast.WhileStmt):
+            self.__init_frame_length_whilestmt(stmt)
+        elif isinstance(stmt, c_ast.RetStmt):
+            self.__init_frame_length_retstmt(stmt)
+        elif isinstance(stmt, c_ast.ExpStmt):
+            self.__init_frame_length_expstmt(stmt)
+        elif isinstance(stmt, c_ast.SwitchStmt):
+            self.__init_frame_length_switchstmt(stmt)
+    
+    def __init_frame_length_ifstmt(self, ifstmt: c_ast.IfStmt):
+        if isinstance(ifstmt.t, c_ast.BlkStmt):
+            self.__init_frame_length_blkstmt(ifstmt.t)
+        if ifstmt.f and isinstance(ifstmt.f, c_ast.BlkStmt):
+            self.__init_frame_length_blkstmt(ifstmt.f)
+
+    def __init_frame_length_forstmt(self, forstmt: c_ast.ForStmt):
+        if isinstance(forstmt.init, c_ast.VarDefsStmt):
+            for varinfo in forstmt.varinfos[::-1]:
+                if varinfo.t is None:
+                    raise Exception('')
+                self.frame_length += varinfo.t.length()
+                self.frame_length = utils.align2(self.frame_length, varinfo.t.align())
+                varinfo.offset = self.frame_length
+        if isinstance(forstmt.body, c_ast.BlkStmt):
+            self.__init_frame_length_blkstmt(forstmt.body)
+
+    def __init_frame_length_whilestmt(self, whilestmt: c_ast.WhileStmt):
+        if isinstance(whilestmt.body, c_ast.BlkStmt):
+            self.__init_frame_length_blkstmt(whilestmt.body)
+
+    def __init_frame_length_retstmt(self, retstmt: c_ast.RetStmt):
+        if retstmt.value is not None:
+            self.__init_frame_length_exp(retstmt.value)
+
+    def __init_frame_length_expstmt(self, expstmt: c_ast.ExpStmt):
+        # 表达式也要进行变量扫描
+        self.__init_frame_length_exp(expstmt.exp)
+
+    def __init_frame_length_switchstmt(self, switchstmt: c_ast.SwitchStmt):
+        # 对条件进行变量扫描
+        self.__init_frame_length_exp(switchstmt.cond)
+        # 对所有的case进行变量扫描
+        for case in switchstmt.cases:
+            for stmt in case.stmts:
+                self.__init_frame_length_stmt(stmt)
+        # 若default存在，对default进行变量扫描
+        if switchstmt.default is not None:
+            for stmt in switchstmt.default.stmts:
+                self.__init_frame_length_stmt(stmt)
 
     def __init_frame_length_blkstmt(self, blkstmt: c_ast.BlkStmt):
         # 按照测试用例的要求，变量在栈上的存储方式是类似数组的
@@ -126,32 +186,36 @@ class CodegenContext:
             varinfo.offset = self.frame_length
         # 累加所有子blk
         for stmt in blkstmt.stmts:
-            if isinstance(stmt, c_ast.BlkStmt):
-                self.__init_frame_length_blkstmt(stmt)
-            elif isinstance(stmt, c_ast.IfStmt):
-                if isinstance(stmt.t, c_ast.BlkStmt):
-                    self.__init_frame_length_blkstmt(stmt.t)
-                if stmt.f and isinstance(stmt.f, c_ast.BlkStmt):
-                    self.__init_frame_length_blkstmt(stmt.f)
-            elif isinstance(stmt, c_ast.ForStmt):
-                if isinstance(stmt.init, c_ast.VarDefsStmt):
-                    for varinfo in stmt.varinfos[::-1]:
-                        if varinfo.t is None:
-                            raise Exception('')
-                        self.frame_length += varinfo.t.length()
-                        self.frame_length = utils.align2(self.frame_length, varinfo.t.align())
-                        varinfo.offset = self.frame_length
-                if isinstance(stmt.body, c_ast.BlkStmt):
-                    self.__init_frame_length_blkstmt(stmt.body)
-            elif isinstance(stmt, c_ast.WhileStmt):
-                if isinstance(stmt.body, c_ast.BlkStmt):
-                    self.__init_frame_length_blkstmt(stmt.body)
-            elif isinstance(stmt, c_ast.RetStmt):
-                if stmt.value is not None:
-                    self.__init_frame_length_exp(stmt.value)
-            elif isinstance(stmt, c_ast.ExpStmt):
-                # 表达式也要进行变量扫描
-                self.__init_frame_length_exp(stmt.exp)
+            self.__init_frame_length_stmt(stmt)
+            continue
+            # if isinstance(stmt, c_ast.BlkStmt):
+            #     self.__init_frame_length_blkstmt(stmt)
+            # elif isinstance(stmt, c_ast.IfStmt):
+            #     if isinstance(stmt.t, c_ast.BlkStmt):
+            #         self.__init_frame_length_blkstmt(stmt.t)
+            #     if stmt.f and isinstance(stmt.f, c_ast.BlkStmt):
+            #         self.__init_frame_length_blkstmt(stmt.f)
+            # elif isinstance(stmt, c_ast.ForStmt):
+            #     if isinstance(stmt.init, c_ast.VarDefsStmt):
+            #         for varinfo in stmt.varinfos[::-1]:
+            #             if varinfo.t is None:
+            #                 raise Exception('')
+            #             self.frame_length += varinfo.t.length()
+            #             self.frame_length = utils.align2(self.frame_length, varinfo.t.align())
+            #             varinfo.offset = self.frame_length
+            #     if isinstance(stmt.body, c_ast.BlkStmt):
+            #         self.__init_frame_length_blkstmt(stmt.body)
+            # elif isinstance(stmt, c_ast.WhileStmt):
+            #     if isinstance(stmt.body, c_ast.BlkStmt):
+            #         self.__init_frame_length_blkstmt(stmt.body)
+            # elif isinstance(stmt, c_ast.RetStmt):
+            #     if stmt.value is not None:
+            #         self.__init_frame_length_exp(stmt.value)
+            # elif isinstance(stmt, c_ast.ExpStmt):
+            #     # 表达式也要进行变量扫描
+            #     self.__init_frame_length_exp(stmt.exp)
+            # elif isinstance(stmt, c_ast.SwitchStmt):
+            #     pass
         self.frame_length = utils.align2(self.frame_length, 16)
     
     def __init_frame_length_exp(self, exp: c_ast.Exp):
@@ -201,6 +265,7 @@ class CodegenContext:
     # 总共生成2个标签：.L.if.{ctr}.false 和 .L.if.{ctr}.end
     def gen_if_labels(self) -> tuple[str, str]:
         '''
+        # 返回值
         * .0: .L.if.{ctr}.false 标签
         * .1: .L.if.{ctr}.end 标签
         '''
@@ -225,6 +290,7 @@ class CodegenContext:
     # 总共生成3个标签：.L.for.{ctr}.cond .L.for{ctr}.step 和 .L.for.{ctr}.end
     def gen_for_labels(self) -> tuple[str, str, str]:
         '''
+        # 返回值
         * .0:.L.for.{ctr}.cond
         * .1:.L.for.{ctr}.step
         * .2:.L.for.{ctr}.end
@@ -250,6 +316,7 @@ class CodegenContext:
     # 总共生成2个标签： .L.while.{ctr}.cond 和 .L.while.{ctr}.end
     def gen_while_labels(self) -> tuple[str, str]:
         '''
+        # 返回值
         * 0: .L.while.{ctr}.cond
         * 1: .L.while.{ctr}.end
         '''
@@ -261,6 +328,15 @@ class CodegenContext:
         # 将.L.while.{while_ctr}.cond标签添加到continue_labels的末尾
         self.continue_labels.append(while_labels[0])
         return while_labels
+    
+    # 所生成的标签结构是，[cases] default end
+    def gen_switch_labels(self, switch_stmt: c_ast.SwitchStmt) -> tuple[list[str], str, str]:
+        switch_ctr = self.switch_counter
+        self.switch_counter += 1
+        switch_labels = [f'.L.switch.{switch_ctr}.{i}' for i in range(len(switch_stmt.cases))], f'.L.switch.{switch_ctr}.default', f'.L.switch.{switch_ctr}.end'
+        # 将.L.switch.{switch_ctr}.end标签添加到break_labels的末尾
+        self.break_labels.append(switch_labels[2])
+        return switch_labels
 
 # 函数定义的代码生成
 def codegen_ast2ir_code_emit(ctx: CodegenContext, vardefsstmts: list[c_ast.VarDefsStmt]) -> list[IR]:
@@ -356,7 +432,20 @@ def codegen_ast2ir_data_emit_str_stmt(ctx: CodegenContext, stmt: c_ast.Stmt) -> 
         return []
     elif isinstance(stmt, c_ast.ContinueStmt):
         return []
+    elif isinstance(stmt, c_ast.SwitchStmt):
+        return codegen_ast2ir_data_emit_str_switchstmt(ctx, stmt)
     raise Exception('')
+
+def codegen_ast2ir_data_emit_str_switchstmt(ctx: CodegenContext, switchstmt: c_ast.SwitchStmt) -> list[IR]:
+    irs: list[IR] = []
+    irs.extend(codegen_ast2ir_data_emit_str_exp(ctx, switchstmt.cond))
+    for case in switchstmt.cases:
+        for stmt in case.stmts:
+            irs.extend(codegen_ast2ir_data_emit_str_stmt(ctx, stmt))
+    if switchstmt.default is not None:
+        for stmt in switchstmt.default.stmts:
+            irs.extend(codegen_ast2ir_data_emit_str_stmt(ctx, stmt))
+    return irs
 
 def codegen_ast2ir_data_emit_str_blkstmt(ctx: CodegenContext, blkstmt: c_ast.BlkStmt) -> list[IR]:
     irs: list[IR] = []
@@ -505,7 +594,39 @@ def codegen_ast2ir_stmt(ctx: CodegenContext, stmt: c_ast.Stmt) -> list[IR]:
         return [J(ctx.break_labels[-1])]
     elif isinstance(stmt, c_ast.ContinueStmt):
         return [J(ctx.continue_labels[-1])]
+    elif isinstance(stmt, c_ast.SwitchStmt):
+        return codegen_ast2ir_switchstmt(ctx, stmt)
     raise Exception('')
+
+def codegen_ast2ir_switchstmt(ctx: CodegenContext, switchstmt: c_ast.SwitchStmt) -> list[IR]:
+    irs: list[IR] = []
+    (cases_label, default_label, end_label) = ctx.gen_switch_labels(switchstmt)
+    # 生成条件表达式
+    irs.extend(codegen_ast2ir_exp(ctx, switchstmt.cond))
+    # 生成跳转语句-case
+    # 我们这里就是有一个比较上的错误
+    for i in range(len(switchstmt.cases)):
+        # 比较
+        irs.append(LI(Register(RegNo.A1), str(switchstmt.cases[i].cond)))
+        irs.append(XOR(Register(RegNo.A1), Register(RegNo.A0), Register(RegNo.A1)))
+        # 等于0则跳转
+        irs.append(BEQZ(Register(RegNo.A1), cases_label[i]))
+    # 生成跳转语句-default
+    irs.append(J(default_label))
+    # 生成case代码
+    for i in range(len(switchstmt.cases)):
+        irs.append(Label(cases_label[i]))
+        for stmt in switchstmt.cases[i].stmts:
+            irs.extend(codegen_ast2ir_stmt(ctx, stmt))
+    # 生成default的代码
+    irs.append(Label(default_label))
+    if switchstmt.default is not None:
+        for stmt in switchstmt.default.stmts:
+            irs.extend(codegen_ast2ir_stmt(ctx, stmt))
+    # 生成break标签
+    irs.append(Label(end_label))
+    ctx.break_labels.pop()
+    return irs
 
 def codegen_ast2ir_expstmt(ctx: CodegenContext, expstmt: c_ast.ExpStmt) -> list[IR]:
     return codegen_ast2ir_exp(ctx, expstmt.exp)
@@ -1070,7 +1191,7 @@ def codegen_ast2ir_exp(ctx: CodegenContext, exp: c_ast.Exp) -> list[IR]:
             if not isinstance(exp.exp, c_ast.Exp):
                 raise Exception('')
             result.extend(codegen_address(ctx, exp.exp))
-        elif exp.op == c_ast.UOp.DEREF: # 那么问题就在于 任何情况下deref都应当直接load吗
+        elif exp.op == c_ast.UOp.DEREF:
             if not isinstance(exp.exp, c_ast.Exp):
                 raise Exception('')
             result.extend(codegen_ast2ir_exp(ctx, exp.exp))

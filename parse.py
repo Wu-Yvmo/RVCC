@@ -803,12 +803,60 @@ def parse_stmt(ctx: ParseContext) -> c_ast.Stmt:
         # 解析break
         result = parse_stmt_break(ctx)
     elif ctx.current().token_type == ctoken.CTokenType.KEY_CONTINUE:
-        # 解析continue
+        # 解析 continue
         result = parse_stmt_continue(ctx)
+    elif ctx.current().token_type == ctoken.CTokenType.KEY_SWITCH:
+        # 解析 switch
+        result = parse_stmt_switch(ctx)
     else:
         result = parse_stmt_exp(ctx)
     ltrim(ctx)
     return result
+
+def parse_stmt_switch(ctx: ParseContext) -> c_ast.Stmt:
+    # 跳过'switch' 和 '('
+    ctx.iter()
+    ctx.iter()
+    # 解析switch的条件表达式
+    cond = parse_exp(ctx)
+    # 跳过')'
+    ctx.iter()
+    # 跳过'{'
+    ctx.iter()
+    # 解析所有的case和default
+    cases: list[c_ast.Case] = []
+    default: c_ast.Default|None = None
+    while not ctx.end() and ctx.current().token_type != ctoken.CTokenType.PC_R_CURLY_BRACKET:
+        # 解析case
+        if ctx.current().token_type == ctoken.CTokenType.KEY_CASE:
+            # 跳过'case'
+            ctx.iter()
+            case_cond = utils.eval_i(ctx.current().value)
+            # 跳过case值
+            ctx.iter()
+            # 跳过':'
+            ctx.iter()
+            stmts: list[c_ast.Stmt] = []
+            while not ctx.end() and ctx.current().token_type != ctoken.CTokenType.PC_R_CURLY_BRACKET and \
+            ctx.current().token_type != ctoken.CTokenType.KEY_CASE and \
+            ctx.current().token_type != ctoken.CTokenType.KEY_DEFAULT:
+                stmts.append(parse_stmt(ctx))
+            cases.append(c_ast.Case(case_cond, stmts))
+            continue
+        # 解析default
+        # 跳过'default' ':'
+        ctx.iter()
+        ctx.iter()
+        stmts: list[c_ast.Stmt] = []
+        while not ctx.end() and ctx.current().token_type != ctoken.CTokenType.PC_R_CURLY_BRACKET and \
+        ctx.current().token_type != ctoken.CTokenType.KEY_CASE and \
+        ctx.current().token_type != ctoken.CTokenType.KEY_DEFAULT:
+            stmts.append(parse_stmt(ctx))
+        default = c_ast.Default(stmts)
+    # 跳过'}'
+    ctx.iter()
+    # 构造Switch并返回
+    return c_ast.SwitchStmt(cond, cases, default)
 
 def parse_stmt_break(ctx: ParseContext) -> c_ast.Stmt:
     ctx.iter()

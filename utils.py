@@ -1,3 +1,5 @@
+import ctypes
+
 def align2(x: int, align: int) -> int:
     if x == 0:
         return 0
@@ -33,15 +35,17 @@ def __eval_oc(l: str) -> int:
 
 def eval_i(l: str) -> int:
     '''
-    描述：对整型字面量进行求值
+    # 描述
+    对整型字面量进行求值
     '''
     # 16 进制
+    # 这里实际上有bug.
     if l[0] == '0' and len(l) >= 2 and (l[1] == 'x' or l[1] == 'X'):
-        v = 0
-        l = l[2:]
-        for c in l:
-            v *= 16
-            v += __eval_hc(c)
+        lib = ctypes.CDLL('cdll/eval_i.so')
+        eval_hex_i64 = lib.eval_hex_i64
+        eval_hex_i64.argtypes = [ctypes.c_char_p]
+        eval_hex_i64.restype = ctypes.c_long
+        v = eval_hex_i64(l.encode())
         return v
     # 8 进制
     if l[0] == '0' and len(l) >= 2 and (l[1] == 'b' or l[1] == 'B'):
@@ -67,3 +71,12 @@ def eval_i(l: str) -> int:
 
 if __name__ == '__main__':
     print(align2(10, 16))
+    print(eval_i('0xffffffff'))
+    print(2**32-1)
+    lib = ctypes.CDLL('cdll/eval_i.so')
+    hello = lib.hello
+    hello()
+    eval_hex_i64 = lib.eval_hex_i64
+    eval_hex_i64.argtypes = [ctypes.c_char_p]
+    eval_hex_i64.restype = ctypes.c_long
+    print(eval_hex_i64(b'0xffffffff'))

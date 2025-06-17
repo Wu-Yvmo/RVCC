@@ -1,6 +1,9 @@
 from enum import Enum, auto
 
 class CTokenType(Enum):
+    KEY_SWITCH = auto()
+    KEY_CASE = auto()
+    KEY_DEFAULT = auto()
     KEY_BREAK = auto()
     KEY_CONTINUE = auto()
     KEY_GOTO = auto()
