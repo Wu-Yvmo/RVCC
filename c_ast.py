@@ -35,6 +35,8 @@ class Exp:
         self.type: c_type.CType|None = None
 
 class BinOp(Enum):
+    L_SHIFT = auto()
+    R_SHIFT = auto()
     ADD = auto()
     SUB = auto()
     MUL = auto()
@@ -47,6 +49,8 @@ class BinOp(Enum):
     GT = auto()
     GE = auto()
     ASN = auto()
+    L_SHIFT_ASN = auto()
+    R_SHIFT_ASN = auto()
     ADD_ASN = auto()
     SUB_ASN = auto()
     MUL_ASN = auto()

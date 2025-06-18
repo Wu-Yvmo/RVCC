@@ -226,6 +226,14 @@ class XORI(Instruction):
         self.src = src
         self.value = value
 
+# 逻辑左移
+class SLL(Instruction):
+    def __init__(self, dest: Register, src1: Register, src2: Register):
+        super().__init__()
+        self.dest = dest
+        self.src1 = src1
+        self.src2 = src2
+
 # 逻辑左移-立即数版本
 class SLLI(Instruction):
     def __init__(self, dest: Register, src: Register, value: str):
@@ -234,6 +242,14 @@ class SLLI(Instruction):
         self.src = src
         self.value = value
 
+# 算数右移
+class SRA(Instruction):
+    def __init__(self, dest: Register, src1: Register, src2: Register):
+        super().__init__()
+        self.dest = dest
+        self.src1 = src1
+        self.src2 = src2
+        
 # 算数右移-立即数版本
 class SRAI(Instruction):
     def __init__(self, dest: Register, src: Register, value: str):

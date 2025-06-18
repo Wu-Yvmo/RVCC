@@ -16,15 +16,15 @@ def __eval_dc(l: str) -> int:
     return ord(l) - ord('0')
 
 # 对16进制字符串求值
-def __eval_hc(l: str) -> int:
-    lv = ord(l)
-    if lv >= ord('0') and lv <= ord('9'):
-        return lv - ord('0')
-    if lv >= ord('a') and lv <= ord('f'):
-        return lv - ord('a') + 10
-    if lv >= ord('A') and lv <= ord('F'):
-        return lv - ord('A') + 10
-    raise Exception('')
+# def __eval_hc(l: str) -> int:
+#     lv = ord(l)
+#     if lv >= ord('0') and lv <= ord('9'):
+#         return lv - ord('0')
+#     if lv >= ord('a') and lv <= ord('f'):
+#         return lv - ord('a') + 10
+#     if lv >= ord('A') and lv <= ord('F'):
+#         return lv - ord('A') + 10
+#     raise Exception('')
 
 def __eval_bc(l: str) -> int:
     return int(l == '1')

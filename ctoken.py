@@ -53,6 +53,14 @@ class CTokenType(Enum):
     OP_LOGIC_OR = auto()
     # ‘&&’ 逻辑与运算符
     OP_LOGIC_AND = auto()
+    # '<<' 左移
+    OP_L_SHIFT = auto()
+    # '>>' 右移
+    OP_R_SHIFT = auto()
+    # '<<=' 左移赋值
+    OP_L_SHIFT_ASN = auto()
+     # '>>=' 右移赋值
+    OP_R_SHIFT_ASN = auto()
     # '==' 等于运算符
     OP_EQ = auto()
     # '!=' 不等于运算符

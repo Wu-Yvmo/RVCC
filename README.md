@@ -97,7 +97,7 @@ RVCC 脱胎于国科大软件所的rvcc课程，并使用python编写。
 - [x] 解决typedef和标签之间的冲突
 - [x] 支持break语句
 - [x] 支持continue语句
-- [ ] 支持switch和case
-- [ ] 支持<< <<= >> >>=
+- [x] 支持switch和case
+- [x] 支持<< <<= >> >>=
 - [ ] 支持三元条件运算符
 - [ ] 支持常量表达式
