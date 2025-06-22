@@ -94,6 +94,8 @@ class CodegenContext:
         self.continue_labels: list[str] = []
         # switch标号的计数器
         self.switch_counter = 0
+        # 三目运算符的标号计数器
+        self.triple_counter = 0
     
     # 整个栈帧初始化的逻辑有很大的问题
     def init_frame_length(self, vardefs: c_ast.VarDefsStmt):
@@ -187,35 +189,6 @@ class CodegenContext:
         # 累加所有子blk
         for stmt in blkstmt.stmts:
             self.__init_frame_length_stmt(stmt)
-            # continue
-            # if isinstance(stmt, c_ast.BlkStmt):
-            #     self.__init_frame_length_blkstmt(stmt)
-            # elif isinstance(stmt, c_ast.IfStmt):
-            #     if isinstance(stmt.t, c_ast.BlkStmt):
-            #         self.__init_frame_length_blkstmt(stmt.t)
-            #     if stmt.f and isinstance(stmt.f, c_ast.BlkStmt):
-            #         self.__init_frame_length_blkstmt(stmt.f)
-            # elif isinstance(stmt, c_ast.ForStmt):
-            #     if isinstance(stmt.init, c_ast.VarDefsStmt):
-            #         for varinfo in stmt.varinfos[::-1]:
-            #             if varinfo.t is None:
-            #                 raise Exception('')
-            #             self.frame_length += varinfo.t.length()
-            #             self.frame_length = utils.align2(self.frame_length, varinfo.t.align())
-            #             varinfo.offset = self.frame_length
-            #     if isinstance(stmt.body, c_ast.BlkStmt):
-            #         self.__init_frame_length_blkstmt(stmt.body)
-            # elif isinstance(stmt, c_ast.WhileStmt):
-            #     if isinstance(stmt.body, c_ast.BlkStmt):
-            #         self.__init_frame_length_blkstmt(stmt.body)
-            # elif isinstance(stmt, c_ast.RetStmt):
-            #     if stmt.value is not None:
-            #         self.__init_frame_length_exp(stmt.value)
-            # elif isinstance(stmt, c_ast.ExpStmt):
-            #     # 表达式也要进行变量扫描
-            #     self.__init_frame_length_exp(stmt.exp)
-            # elif isinstance(stmt, c_ast.SwitchStmt):
-            #     pass
         self.frame_length = utils.align2(self.frame_length, 16)
     
     def __init_frame_length_exp(self, exp: c_ast.Exp):
@@ -337,6 +310,13 @@ class CodegenContext:
         # 将.L.switch.{switch_ctr}.end标签添加到break_labels的末尾
         self.break_labels.append(switch_labels[2])
         return switch_labels
+    
+    # 所生成的标签结构是： .L.trp.{}.t .L.trp.{}.f .L.trp.{}.end
+    def gen_trp_labels(self) -> tuple[str, str, str]:
+        trp_ctr = self.triple_counter
+        self.triple_counter += 1
+        trp_labels = f'.L.trp.{trp_ctr}.t', f'.L.trp.{trp_ctr}.f', f'.L.trp.{trp_ctr}.end'
+        return trp_labels
 
 # 函数定义的代码生成
 def codegen_ast2ir_code_emit(ctx: CodegenContext, vardefsstmts: list[c_ast.VarDefsStmt]) -> list[IR]:
@@ -555,6 +535,12 @@ def codegen_ast2ir_data_emit_str_exp(ctx: CodegenContext, exp: c_ast.Exp) -> lis
         return irs
     if isinstance(exp, c_ast.Ltr):
         return []
+    if isinstance(exp, c_ast.TrpExp):
+        irs: list[IR] = []
+        irs.extend(codegen_ast2ir_data_emit_str_exp(ctx, exp.cond))
+        irs.extend(codegen_ast2ir_data_emit_str_exp(ctx, exp.t))
+        irs.extend(codegen_ast2ir_data_emit_str_exp(ctx, exp.f))
+        return irs
     raise Exception('shouldn not run')
 
 # 生成全局变量
@@ -859,7 +845,23 @@ def codegen_ast2ir_exp(ctx: CodegenContext, exp: c_ast.Exp) -> list[IR]:
     if exp.type is None:
         raise Exception(f'{exp}')
     result: list[IR] = []
-    if isinstance(exp, c_ast.Num):
+    if isinstance(exp, c_ast.TrpExp):
+        result.extend(codegen_ast2ir_exp(ctx, exp.cond))
+        # 生成标签
+        (t_label, f_label, end_label) = ctx.gen_trp_labels()
+        # 生成跳转语句
+        result.append(BEQZ(Register(RegNo.A0), f_label))
+        # 生成true分支
+        result.append(Label(t_label))
+        result.extend(codegen_ast2ir_exp(ctx, exp.t))
+        result.append(J(end_label))
+        # 生成false分支
+        result.append(Label(f_label))
+        result.extend(codegen_ast2ir_exp(ctx, exp.f))
+        # 生成end标签
+        result.append(Label(end_label))
+        return result
+    elif isinstance(exp, c_ast.Num):
         result.append(LI(Register(RegNo.A0), str(exp.value)))
         return result
     elif isinstance(exp, c_ast.BlkExp):

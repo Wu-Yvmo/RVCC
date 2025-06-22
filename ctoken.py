@@ -115,6 +115,8 @@ class CTokenType(Enum):
     PC_SEMICOLON = auto()
     # ',' 逗号
     PC_COMMA = auto()
+    # ‘？’ 问号
+    PC_QUESTION = auto()
     # ':' 冒号
     PC_COLON = auto()
     # '.' 点号

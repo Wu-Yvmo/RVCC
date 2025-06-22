@@ -254,7 +254,7 @@ def parse_num(ctx: ParseContext) -> c_ast.Exp:
             e = c_ast.Idt(i)
             add_type(ctx, e)
     else:
-        raise Exception(f'{ctx.current().token_type} {e}')
+        raise Exception(f'{ctx.current().token_type} {e} {ctx.next().token_type}')
     # 对函数调用的情况做处理
     while ctx.current().token_type == ctoken.CTokenType.PC_L_ROUND_BRACKET or \
     ctx.current().token_type == ctoken.CTokenType.PC_L_SQUARE_BRACKET or \
@@ -582,6 +582,17 @@ def type_compatibalize(l: c_type.CType, r: c_type.CType) -> c_type.CType:
 
 # 处理通用表达式类型转换的逻辑
 def universal_convert(ctx: ParseContext, e: c_ast.Exp):
+    # trpexp
+    if isinstance(e, c_ast.TrpExp):
+        if e.t.type is None or e.f.type is None:
+            raise Exception('')
+        type_compatible = type_compatibalize(e.t.type, e.f.type)
+        if not c_type.same_type(e.t.type, type_compatible):
+            e.t = c_ast.CastExp(e.t, type_compatible)
+            add_type(ctx, e.t)
+        if not c_type.same_type(e.f.type, type_compatible):
+            e.f = c_ast.CastExp(e.f, type_compatible)
+            add_type(ctx, e.f)
     # binexp
     if isinstance(e, c_ast.BinExp):
         if e.l.type is None or e.r.type is None:
@@ -673,11 +684,9 @@ def parse_binexp_eq(ctx: ParseContext) -> c_ast.Exp:
         add_type(ctx, l)
     return l
 
-# 现在要引进对+= -= *= /= 的支持
-# and和or和
-# 优先级是：&>^>|
+# 现在要引进 cond: exp1 ? exp2 表达式
 def parse_binexp_asn(ctx: ParseContext) -> c_ast.Exp:
-    l = parse_binexp_logic_or(ctx)
+    l = parse_exp_trp(ctx)
     while not ctx.end() and ctx.current().token_type == ctoken.CTokenType.OP_ASN or \
     ctx.current().token_type == ctoken.CTokenType.OP_ADD_ASN or \
     ctx.current().token_type == ctoken.CTokenType.OP_SUB_ASN or \
@@ -786,6 +795,21 @@ def parse_binexp_asn(ctx: ParseContext) -> c_ast.Exp:
         else:
             raise Exception(f'invalid operator: {op}')
     return l
+
+def parse_exp_trp(ctx: ParseContext) -> c_ast.Exp:
+    cond = parse_binexp_logic_or(ctx)
+    if not ctx.end() and ctx.current().token_type == ctoken.CTokenType.PC_QUESTION:
+        ctx.iter()
+        t = parse_binexp_logic_or(ctx)
+        # 读取 ':'
+        ctx.iter()
+        f = parse_exp_trp(ctx)
+        trp = c_ast.TrpExp(cond, t, f)
+        # 构造可能需要的类型转换
+        universal_convert(ctx, trp)
+        add_type(ctx, trp)
+        return trp
+    return cond
 
 def parse_binexp_comma(ctx: ParseContext) -> c_ast.Exp:
     l = parse_binexp_asn(ctx)
@@ -1441,7 +1465,10 @@ def parse_stmt_typedef(ctx: ParseContext) -> c_ast.Stmt:
 
 # 下面的代码我完全没有审阅 重新观察 等待修改
 def add_type(ctx: ParseContext, exp: c_ast.Exp):
-    if isinstance(exp, c_ast.Num):
+    # 不是？
+    if isinstance(exp, c_ast.TrpExp):
+        exp.type = exp.t.type
+    elif isinstance(exp, c_ast.Num):
         if utils.i32_sufficient(int(exp.value)):
             exp.type = c_type.I32()
         else:

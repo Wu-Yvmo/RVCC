@@ -7,32 +7,39 @@ from ir import RegNo
 import varinfo
 import ctoken
 
+
 class Stmt:
     def __init__(self):
         super().__init__()
+
 
 class BreakStmt(Stmt):
     def __init__(self):
         super().__init__()
 
+
 class ContinueStmt(Stmt):
     def __init__(self):
         super().__init__()
+
 
 class CodeTag(Stmt):
     def __init__(self, tag: str):
         super().__init__()
         self.tag = tag
 
+
 class GoToStmt(Stmt):
     def __init__(self, dest: str):
         self.dest = dest
+
 
 @dataclass
 class Exp:
     def __init__(self):
         super().__init__()
-        self.type: c_type.CType|None = None
+        self.type: c_type.CType | None = None
+
 
 class BinOp(Enum):
     L_SHIFT = auto()
@@ -68,6 +75,15 @@ class BinOp(Enum):
     # access，访问
     ACS = auto()
 
+
+class TrpExp(Exp):
+    def __init__(self, cond: Exp, t: Exp, f: Exp):
+        super().__init__()
+        self.cond = cond
+        self.t = t
+        self.f = f
+
+
 @dataclass
 class BinExp(Exp):
     def __init__(self, l: Exp, op: BinOp, r: Exp):
@@ -75,6 +91,7 @@ class BinExp(Exp):
         self.l = l
         self.op = op
         self.r = r
+
 
 class UOp(Enum):
     # '~' 按位求反
@@ -86,6 +103,7 @@ class UOp(Enum):
     REF = auto()
     DEREF = auto()
     SIZEOF = auto()
+
 
 def binop2uop(binop: BinOp) -> UOp:
     if binop == BinOp.ADD:
@@ -99,22 +117,25 @@ def binop2uop(binop: BinOp) -> UOp:
     else:
         raise Exception('')
 
+
 class UExp(Exp):
-    def __init__(self, op: UOp, exp: Exp|Stmt):
+    def __init__(self, op: UOp, exp: Exp| Stmt):
         super().__init__()
         self.op = op
         self.exp = exp # 我们要修改这个地方的可能性 对类型签名进行sizeof需要额外的修改
         # 还是说我们应该基于这个前提构造表达式？
         # 所以说我是愿意计算一些表达式的
-    
+
     def __str__(self) -> str:
         return f'({self.op}, {self.exp})'
+
 
 class CastExp(Exp):
     def __init__(self, exp: Exp, cast_to: c_type.CType):
         super().__init__()
         self.exp = exp
         self.cast_to = cast_to
+
 
 class Num(Exp):
     def __init__(self, value: int):

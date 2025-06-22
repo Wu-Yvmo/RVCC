@@ -5,6 +5,7 @@ import parse
 
 command_orders: dict[str, str] = {}
 
+
 def init_command_orders():
     argv = sys.argv
     while len(argv) > 0:
