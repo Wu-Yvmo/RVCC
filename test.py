@@ -16,7 +16,8 @@ test_items: list[str] = [
     'usualconv',
     'literal',
     'enum',
-    'cast'
+    'cast',
+    'constexpr'
 ]
 
 # 由于我们往往是更关心新增的测试，这里将测试的先后顺序反过来
