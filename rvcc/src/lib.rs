@@ -5,3 +5,4 @@ pub mod parse;
 pub mod asm;
 pub mod ast;
 pub mod r#type;
+pub mod functional_test;

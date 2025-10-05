@@ -107,6 +107,7 @@ pub fn tokenize(code: String) -> parse::ParseContext {
             '<' => tokenize_prefix_lt(&mut ctx),
             '>' => tokenize_prefix_gt(&mut ctx),
             '?' => tokenize_prefix_question(&mut ctx),
+            '"' => tokenize_prefix_double_quote(&mut ctx),
             _ => panic!("unexpected situation")
         });
         ctx.jump_spaces();
@@ -475,12 +476,23 @@ fn tokenize_prefix_question(ctx: &mut TokenizeContext) -> token::Token {
     Token::create(token::TokenType::PC_QUESTION, '?'.to_string())
 }
 
+fn tokenize_prefix_double_quote(ctx: &mut TokenizeContext) -> token::Token {
+    ctx.jump('"');
+    let mut content = "".to_string();
+    while !ctx.end() && ctx.current() != '"' {
+        content.push(ctx.current());
+        ctx.jump_any();
+    }
+    ctx.jump('"');
+    Token::create(token::TokenType::STRING, content)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
     fn work() {
-        let code = String::from("int a+++=//\n/**/");
+        let code = String::from("int a+++=//\n/**/ \"\"");
         let tokens = tokenize(code);
     }
     #[test]

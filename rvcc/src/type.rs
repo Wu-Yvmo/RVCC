@@ -6,6 +6,7 @@ extern crate serde_json;
 #[derive(Clone)]
 #[derive(Serialize)]
 pub enum Type {
+    VOID,
     I8(I8),
     I16(I16),
     I32(I32),
@@ -34,8 +35,26 @@ impl Type {
 }
 
 impl Type {
-    pub fn to_string(&self) -> String {
-        todo!()
+    pub fn create_void() -> Self {
+        Type::VOID
+    }
+    pub fn create_i8() -> Self {
+        Type::I8(I8{})
+    }
+    pub fn create_i16() -> Self {
+        Type::I16(I16{})
+    }
+    pub fn create_i32() -> Self {
+        Type::I32(I32{})
+    }
+    pub fn create_i64() -> Self {
+        Type::I64(I64{})
+    }
+}
+
+impl Type {
+    pub fn create_ptr_of(element_type: Box<Type>) -> Self {
+        Type::Pointer(Pointer{element_type})
     }
 }
 
@@ -52,31 +71,26 @@ pub enum StorageAttr {
 #[derive(Clone)]
 #[derive(Serialize)]
 pub struct I8 {
-    pub storage_attr: StorageAttr,
 }
 
 #[derive(Clone)]
 #[derive(Serialize)]
 pub struct I16 {
-    pub storage_attr: StorageAttr,
 }
 
 #[derive(Clone)]
 #[derive(Serialize)]
 pub struct I32 {
-    pub storage_attr: StorageAttr,
 }
 
 #[derive(Clone)]
 #[derive(Serialize)]
 pub struct I64 {
-    pub storage_attr: StorageAttr,
 }
 
 #[derive(Clone)]
 #[derive(Serialize)]
 pub struct Array {
-    pub storage_attr: StorageAttr,
     pub index: usize,
     pub element_type: Box<Type>,
 }
@@ -84,7 +98,6 @@ pub struct Array {
 #[derive(Clone)]
 #[derive(Serialize)]
 pub struct Function {
-    pub storage_attr: StorageAttr,
     pub params: Vec<(String, Box<Type>)>,
     pub return_type: Box<Type>,
 }
@@ -92,7 +105,6 @@ pub struct Function {
 #[derive(Clone)]
 #[derive(Serialize)]
 pub struct Pointer {
-    pub storage_attr: StorageAttr,
     pub element_type: Box<Type>,
 }
 

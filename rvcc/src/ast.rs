@@ -4,7 +4,7 @@ extern crate serde_json;
 
 use serde::Serialize;
 
-use crate::r#type;
+use crate::r#type::{self, StorageAttr};
 
 #[derive(Serialize)]
 pub struct Program {
@@ -54,34 +54,6 @@ impl Program {
     }
 }
 
-/// 和结构化输出相关的逻辑
-impl Program {
-    pub fn to_string(&self) -> String {
-        let mut s = "".to_string();
-        for vardef in &self.vardefs {
-            s.push_str(&self.to_string_vardefsstmt(vardef));
-        }
-        s
-    }
-    pub fn to_string_stmt(&self, stmt: &Stmt) -> String {
-        todo!()
-    }
-    pub fn to_string_vardefsstmt(&self, vardefs: &VarDefsStmt) -> String {
-        let mut s = "".to_string();
-        // 是函数
-        if let Some(body) = &vardefs.body {
-            let mut t = self.get_var_type(vardefs.vardefs[0].name.clone());
-            s.push_str(t.to_string().as_str());
-            s.push_str(&self.to_string_stmt(body));
-            return s;
-        }
-        for vardef in &vardefs.vardefs {
-            // s.push_str(&self.vartrackers.);
-        }
-        s
-    }
-}
-
 /// 名称跟踪器
 #[derive(Serialize)]
 pub struct NameTracker {
@@ -124,6 +96,7 @@ impl NameTracker {
 #[derive(Clone)]
 #[derive(Serialize)]
 pub struct VarInfo {
+    pub storage_attr: StorageAttr,
     pub t: r#type::Type,
     pub name: String,
     pub offset: usize,
@@ -131,8 +104,9 @@ pub struct VarInfo {
 
 impl VarInfo {
     /// 根据类型和名称创建一个没有偏移量信息的VarInfo
-    pub fn create(t: r#type::Type, n: String) -> Self {
+    pub fn create(storage_attr: StorageAttr, t: r#type::Type, n: String) -> Self {
         VarInfo { 
+            storage_attr,
             t, 
             name: n, 
             offset: 0 
@@ -142,6 +116,7 @@ impl VarInfo {
 
 // 提问：如何将函数定义和常规的声明融合起来？
 #[derive(Serialize)]
+#[derive(Clone)]
 pub struct VarDefsStmt {
     pub vardefs: Vec<VarDef>,
     // 函数体 当为Some时是函数定义 当为None时为变量定义/函数定义
@@ -151,6 +126,7 @@ pub struct VarDefsStmt {
 
 // 对vardef的定义是：不负责存储类型，只存储变量的名称和初始化表达式
 #[derive(Serialize)]
+#[derive(Clone)]
 pub struct VarDef {
     pub name: String,
     pub init: Option<Exp>
@@ -158,6 +134,7 @@ pub struct VarDef {
 
 /// 语句
 #[derive(Serialize)]
+#[derive(Clone)]
 pub enum Stmt {
     Break,
     Continue,
@@ -168,22 +145,26 @@ pub enum Stmt {
     While(WhileStmt),
     For(ForStmt),
     Return(ReturnStmt),
-    Blk(BlkStmt)
+    Blk(BlkStmt),
+    Exp(ExpStmt)
 }
 
 /// label语句
 #[derive(Serialize)]
+#[derive(Clone)]
 pub struct CodeTagStmt {
     pub tag_name: String,
 }
 
 /// goto语句
 #[derive(Serialize)]
+#[derive(Clone)]
 pub struct GoToStmt {
     pub target_name: String,
 }
 
 #[derive(Serialize)]
+#[derive(Clone)]
 pub struct IfStmt {
     pub cond: Exp,
     pub true_branch: Box<Stmt>,
@@ -191,6 +172,7 @@ pub struct IfStmt {
 }
 
 #[derive(Serialize)]
+#[derive(Clone)]
 pub struct ForStmt {
     /// 初始化语句 我有问题：这里应当如何提供变量声明？
     pub init: ForInit,
@@ -205,6 +187,7 @@ pub struct ForStmt {
 }
 
 #[derive(Serialize)]
+#[derive(Clone)]
 pub enum ForInit {
     /// 变量声明
     VarDecl(VarDefsStmt),
@@ -213,6 +196,7 @@ pub enum ForInit {
 }
 
 #[derive(Serialize)]
+#[derive(Clone)]
 pub struct WhileStmt {
     pub cond: Exp,
     pub body: Box<Stmt>,
@@ -220,23 +204,27 @@ pub struct WhileStmt {
 
 // 考虑添加变量表
 #[derive(Serialize)]
+#[derive(Clone)]
 pub struct BlkStmt {
     pub stmts: Vec<Stmt>,
     pub vartracker: Rc<RefCell<NameTracker>>,
 }
 
 #[derive(Serialize)]
+#[derive(Clone)]
 pub struct ReturnStmt {
     pub exp: Option<Exp>
 }
 
 #[derive(Serialize)]
+#[derive(Clone)]
 pub struct ExpStmt {
     pub exp: Exp,
 }
 
 /// 表达式
 #[derive(Serialize)]
+#[derive(Clone)]
 pub enum Exp {
     BExp(BExp),
     UExp(UExp),
@@ -256,33 +244,33 @@ impl Exp {
     /// 获取表达式的类型
     pub fn get_type(&self) -> r#type::Type {
         match self {
-            Exp::BExp(bexp) => bexp.t.clone(),
-            Exp::UExp(uexp) => uexp.t.clone(),
-            Exp::TripleExp(triple_exp) => triple_exp.t.clone(),
-            Exp::TypeCastExp(type_cast_exp) => type_cast_exp.t.clone(),
-            Exp::NumLtrExp(num_ltr_exp) => num_ltr_exp.t.clone(),
-            Exp::StrLtrExp(str_ltr_exp) => str_ltr_exp.t.clone(),
-            Exp::CharLtrExp(char_ltr_exp) => char_ltr_exp.t.clone(),
-            Exp::IdentExp(ident_exp) => ident_exp.t.clone(),
-            Exp::CallExp(call_exp) => call_exp.t.clone(),
-            Exp::BlkExp(blk_exp) => blk_exp.t.clone(),
-            Exp::Sizeof(sizeof_exp) => sizeof_exp.t.clone(),
+            Exp::BExp(bexp) => bexp.t.as_ref().unwrap().clone(),
+            Exp::UExp(uexp) => uexp.t.as_ref().unwrap().clone(),
+            Exp::TripleExp(triple_exp) => triple_exp.t.as_ref().unwrap().clone(),
+            Exp::TypeCastExp(type_cast_exp) => type_cast_exp.t.as_ref().unwrap().clone(),
+            Exp::NumLtrExp(num_ltr_exp) => num_ltr_exp.t.as_ref().unwrap().clone(),
+            Exp::StrLtrExp(str_ltr_exp) => str_ltr_exp.t.as_ref().unwrap().clone(),
+            Exp::CharLtrExp(char_ltr_exp) => char_ltr_exp.t.as_ref().unwrap().clone(),
+            Exp::IdentExp(ident_exp) => ident_exp.t.as_ref().unwrap().clone(),
+            Exp::CallExp(call_exp) => call_exp.t.as_ref().unwrap().clone(),
+            Exp::BlkExp(blk_exp) => blk_exp.t.as_ref().unwrap().clone(),
+            Exp::Sizeof(sizeof_exp) => sizeof_exp.t.as_ref().unwrap().clone(),
         }
     }
     /// 设置表达式的类型
     pub fn set_type(&mut self, t: r#type::Type) {
         match self {
-            Exp::BExp(bexp) => bexp.t = t,
-            Exp::UExp(uexp) => uexp.t = t,
-            Exp::TripleExp(triple_exp) => triple_exp.t = t,
-            Exp::TypeCastExp(type_cast_exp) => type_cast_exp.t = t,
-            Exp::NumLtrExp(num_ltr_exp) => num_ltr_exp.t = t,
-            Exp::StrLtrExp(str_ltr_exp) => str_ltr_exp.t = t,
-            Exp::CharLtrExp(char_ltr_exp) => char_ltr_exp.t = t,
-            Exp::IdentExp(ident_exp) => ident_exp.t = t,
-            Exp::CallExp(call_exp) => call_exp.t = t,
-            Exp::BlkExp(blk_exp) => blk_exp.t = t,
-            Exp::Sizeof(sizeof_exp) => sizeof_exp.t = t,
+            Exp::BExp(bexp) => bexp.t = Some(t),
+            Exp::UExp(uexp) => uexp.t = Some(t),
+            Exp::TripleExp(triple_exp) => triple_exp.t = Some(t),
+            Exp::TypeCastExp(type_cast_exp) => type_cast_exp.t = Some(t),
+            Exp::NumLtrExp(num_ltr_exp) => num_ltr_exp.t = Some(t),
+            Exp::StrLtrExp(str_ltr_exp) => str_ltr_exp.t = Some(t),
+            Exp::CharLtrExp(char_ltr_exp) => char_ltr_exp.t = Some(t),
+            Exp::IdentExp(ident_exp) => ident_exp.t = Some(t),
+            Exp::CallExp(call_exp) => call_exp.t = Some(t),
+            Exp::BlkExp(blk_exp) => blk_exp.t = Some(t),
+            Exp::Sizeof(sizeof_exp) => sizeof_exp.t = Some(t),
         }
     }
 }
@@ -290,6 +278,7 @@ impl Exp {
 /// 用于双目表达式的双目运算符
 #[allow(non_camel_case_types)]
 #[derive(Serialize)]
+#[derive(Clone)]
 pub enum BOp {
     L_SHIFT,
     R_SHIFT,
@@ -326,17 +315,19 @@ pub enum BOp {
 
 /// 双目表达式
 #[derive(Serialize)]
+#[derive(Clone)]
 pub struct BExp {
     pub l: Box<Exp>,
     pub op: BOp,
     pub r: Box<Exp>,
     /// 表达式的类型
-    pub t: r#type::Type,
+    pub t: Option<r#type::Type>,
 }
 
 /// 单目运算符 用于前缀单目表达式
 #[allow(non_camel_case_types)]
 #[derive(Serialize)]
+#[derive(Clone)]
 pub enum UOp {
     BITS_REVERSE,
     /// 按位取反
@@ -352,91 +343,120 @@ pub enum UOp {
 
 /// 前缀单目表达式
 #[derive(Serialize)]
+#[derive(Clone)]
 pub struct UExp {
     pub op: UOp,
     pub sub: Box<Exp>,
     /// 表达式的类型
-    pub t: r#type::Type,
+    pub t: Option<r#type::Type>,
 }
 
 /// 三目表达式
 #[derive(Serialize)]
+#[derive(Clone)]
 pub struct TripleExp {
     pub cond: Box<Exp>,
     pub true_branch: Box<Exp>,
     pub false_branch: Box<Exp>,
     /// 表达式的类型
-    pub t: r#type::Type,
+    pub t: Option<r#type::Type>,
 }
 
 /// 类型转换表达式
 #[derive(Serialize)]
+#[derive(Clone)]
 pub struct TypeCastExp {
     pub exp: Box<Exp>,
     pub target_type: r#type::Type,
     /// 表达式的类型
-    pub t: r#type::Type,
+    pub t: Option<r#type::Type>,
 }
 
 /// 整型字面量表达式
 #[derive(Serialize)]
+#[derive(Clone)]
 pub struct NumLtrExp {
-    pub value: i64,
+    pub value: usize,
     /// 表达式的类型
-    pub t: r#type::Type,
+    pub t: Option<r#type::Type>,
 }
 
 /// 字符串字面量表达式
 #[derive(Serialize)]
+#[derive(Clone)]
 pub struct StrLtrExp {
     pub content: Vec<char>,
     /// 表达式的类型
-    pub t: r#type::Type,
+    pub t: Option<r#type::Type>,
 }
 
 /// 字符字面量表达式
 #[derive(Serialize)]
+#[derive(Clone)]
 pub struct CharLtrExp {
     pub c: char,
     /// 表达式的类型
-    pub t: r#type::Type,
+    pub t: Option<r#type::Type>,
 }
 
 /// 标识符表达式
 #[derive(Serialize)]
+#[derive(Clone)]
 pub struct IdentExp {
     pub ident: String,
     /// 表达式的类型
-    pub t: r#type::Type,
+    pub t: Option<r#type::Type>,
 }
 
 /// 函数调用表达式
 #[derive(Serialize)]
+#[derive(Clone)]
+/// # 功能描述
+/// 
+/// # 成员描述
+/// callable：经由求值后得到函数的表达式
+/// 
+/// arguments：函数调用中出现的参数
 pub struct CallExp {
     pub callable: Box<Exp>,
     pub arguments: Vec<Exp>,
     /// 表达式的类型
-    pub t: r#type::Type,
+    pub t: Option<r#type::Type>,
 }
 
+/// # 描述
 /// 代码块表达式
+/// 
+/// # 注意
+/// 代码块表达式的类型被定义为最后一个Stmt的类型
+/// 
+/// 如果:
+/// 
+/// 1.该Stmt是表达式，则代码块表达式的类型被规定为这个表达式的类型
+/// 
+/// 2.否则代码块表达式的类型被规定为VOID
 #[derive(Serialize)]
+#[derive(Clone)]
 pub struct BlkExp {
     pub blk: Box<BlkStmt>,
     /// 表达式的类型
-    pub t: r#type::Type,
+    pub t: Option<r#type::Type>,
 }
 
 #[derive(Serialize)]
+#[derive(Clone)]
 pub struct SizeofExp {
     pub content: Box<SizeofContent>,
     /// 表达式的类型
-    pub t: r#type::Type,
+    pub t: Option<r#type::Type>,
 }
 
 #[derive(Serialize)]
-pub enum SizeofContent {
-    Exp(Box<Exp>),
-    VarDefs(VarDefsStmt),
+#[derive(Clone)]
+// 其实在ast中就不是很有必要存储sizeof的内容了，真正有用的就是这个类型。
+// 这是一个应当在编译期就被计算出来的整型。
+pub struct SizeofContent {
+    pub targ_t: r#type::Type,
+    pub t: r#type::Type,
 }
 

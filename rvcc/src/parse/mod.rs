@@ -18,6 +18,12 @@ use crate::r#type::I8;
 use crate::utils;
 use crate::tokenize;
 
+mod stmt;
+mod exp;
+
+use stmt::*;
+use exp::*;
+
 pub struct ParseContext {
     pub tokens: Vec<token::Token>,
     index: usize,
@@ -83,35 +89,6 @@ pub fn parse_program_item(ctx: &mut ParseContext, program: &mut Program) -> ast:
     parse_vardefs_stmt(ctx, program)
 }
 
-pub fn parse_stmt(ctx: &mut ParseContext, program: &mut Program) -> ast::Stmt {
-    match ctx.current().token_type {
-        // break
-        token::TokenType::KEY_BREAK => todo!(),
-        // continue
-        token::TokenType::KEY_CONTINUE => todo!(),
-        // goto
-        token::TokenType::KEY_GOTO => todo!(),
-        // if
-        token::TokenType::KEY_IF => todo!(),
-        // while
-        token::TokenType::KEY_WHILE => todo!(),
-        // for
-        token::TokenType::KEY_FOR => todo!(),
-        // return
-        token::TokenType::KEY_RETURN => todo!(),
-        // Blk 代码块
-        token::TokenType::PC_L_CURLY_BRACKET => todo!(),
-        // vardefs
-        _ if is_type_prefix(ctx, program) => ast::Stmt::VarDefs(Box::new(parse_vardefs_stmt(ctx, program))),
-        // codetag
-        token::TokenType::IDENTIFIER if ctx.next().token_type == token::TokenType::PC_COLON  => todo!(),
-        // identifier
-        token::TokenType::IDENTIFIER if program.exist_var_name(ctx.current().content.clone()) => todo!(),
-        _ => todo!("unimplemented"),
-    }
-    // todo!()
-}
-
 // 我现在的问题是，到底是把信息存储在program中，还是存储在ctx中？
 // 我认为应当存储在Program中
 
@@ -124,18 +101,18 @@ pub fn is_type_prefix(ctx: &mut ParseContext, program: &Program) -> bool {
 /// 解析基础类型。
 /// 完善程度很低。
 pub fn parse_base_type(ctx: &mut ParseContext, program: &Program) -> r#type::Type {
-    let old_storage_attr = ctx.storage_attr.clone();
     ctx.storage_attr = r#type::StorageAttr::Local;
     ctx.jump();
-    let t = r#type::Type::I32(I32 {
-        storage_attr: ctx.storage_attr.clone(),
-    });
-    ctx.storage_attr = old_storage_attr;
+    let t = r#type::Type::I32(I32{});
     t
 }
 
-/// 解析vardefs stmt
-/// 可能是变量定义 函数声明 和 函数定义
+/// # 功能描述
+/// 解析vardefsStmt stmt
+/// 该函数被调用时，可能的解析对象是：
+/// 1.变量定义 
+/// 2.函数声明 
+/// 3.函数定义
 pub fn parse_vardefs_stmt(ctx: &mut ParseContext, program: &mut Program) -> VarDefsStmt {
     let base_type = parse_base_type(ctx, program);
     let mut vardefs: Vec<ast::VarDef> = vec![];
@@ -152,7 +129,14 @@ pub fn parse_vardefs_stmt(ctx: &mut ParseContext, program: &mut Program) -> VarD
         // 解析函数定义
         if vardescribe.1.is_function() && ctx.current().token_type == token::TokenType::PC_L_CURLY_BRACKET {
             // 把当前函数注册到VarTracker中
-            program.vartrackers.last().unwrap().borrow_mut().push_varinfo(ast::VarInfo::create(vardescribe.1.clone(), vardescribe.0.clone()));
+            program.vartrackers
+                .last()
+                .unwrap()
+                .borrow_mut()
+                .push_varinfo(ast::VarInfo::create(
+                    ctx.storage_attr.clone(), 
+                    vardescribe.1.clone(), 
+                    vardescribe.0.clone()));
             // 1.基于Type创建TypeTracker
             let vartracker = Rc::new(RefCell::new(create_vartracker_from_function_type(vardescribe.1.as_function())));
             // 2.把保存有函数局部参数的VarTracker添加到program.vartrackers
@@ -174,6 +158,7 @@ pub fn parse_vardefs_stmt(ctx: &mut ParseContext, program: &mut Program) -> VarD
             return vardefs_stmt;
         }
         // 常规变量定义
+        // 尝试解析变量的初始化表达式，如果存在则解析，否则设为None
         let init = match ctx.current().token_type {
             token::TokenType::OP_ASN => {
                 ctx.jump();
@@ -186,12 +171,17 @@ pub fn parse_vardefs_stmt(ctx: &mut ParseContext, program: &mut Program) -> VarD
             init,
         };
         vardefs.push(vardef);
-        program.vartrackers.last_mut().unwrap().borrow_mut().push_varinfo(ast::VarInfo {
-            name: vardescribe.0.clone(),
-            t: vardescribe.1.clone(),
-            offset: 0,
-        });
+        program.vartrackers
+            .last_mut()
+            .unwrap()
+            .borrow_mut()
+            .push_varinfo(ast::VarInfo::create(
+                ctx.storage_attr.clone(), 
+                vardescribe.1.clone(), 
+                vardescribe.0.clone()));
     }
+    // 跳过末尾的';'
+    ctx.jump();
     VarDefsStmt {
         vardefs,
         body: None,
@@ -202,7 +192,7 @@ pub fn parse_vardefs_stmt(ctx: &mut ParseContext, program: &mut Program) -> VarD
 pub fn create_vartracker_from_function_type(f: r#type::Function) -> NameTracker {
     let mut varinfos: Vec<VarInfo> = vec![];
     for param in f.params {
-        varinfos.push(VarInfo::create(param.1.as_ref().clone(), param.0));
+        varinfos.push(VarInfo::create(r#type::StorageAttr::Local, param.1.as_ref().clone(), param.0));
     }
     NameTracker{ 
         varinfos,
@@ -292,14 +282,12 @@ pub fn parse_vardescribe(ctx: &mut ParseContext, program: &mut Program, mut base
             // 指针
             VarDescribeDecorator::STAR => {
                 base_type = r#type::Type::Pointer(r#type::Pointer{
-                    storage_attr: ctx.storage_attr.clone(),
                     element_type: Box::new(base_type),
                 });
             }
             // 数组
             VarDescribeDecorator::INDEX(idx) => {
                 base_type = r#type::Type::Array(r#type::Array{
-                    storage_attr: ctx.storage_attr.clone(),
                     element_type: Box::new(base_type),
                     index: idx,
                 });
@@ -307,7 +295,6 @@ pub fn parse_vardescribe(ctx: &mut ParseContext, program: &mut Program, mut base
             // 函数
             VarDescribeDecorator::CALL(params) => {
                 base_type = r#type::Type::Function(r#type::Function{
-                    storage_attr: ctx.storage_attr.clone(),
                     params: params.into_iter().map(|(name, ty)| (name, Box::new(ty))).collect(),
                     return_type: Box::new(base_type),
                 });
